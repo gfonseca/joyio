@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "joyio"
+version = "0.0.1"
+description = "Linux Joy-Con input proof of concept"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "evdev>=1.9,<2",
+]
+
+[project.scripts]
+joyio = "joyio.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]

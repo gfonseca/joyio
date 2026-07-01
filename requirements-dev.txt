@@ -1,0 +1,3 @@
+# Instale dentro de .venv. As versões registram o ambiente validado na Fase 0.
+evdev==1.9.3
+pytest==9.1.1

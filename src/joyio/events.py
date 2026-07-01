@@ -1,0 +1,74 @@
+"""Normalization of Linux input events into phase-zero diagnostic events."""
+
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass
+import json
+from typing import Any
+
+from evdev import AbsInfo, InputEvent, ecodes
+
+
+@dataclass(frozen=True, slots=True)
+class NormalizedEvent:
+    kind: str
+    control: str
+    code: int
+    value: float
+    state: str | None
+    timestamp: float
+
+    def to_json(self) -> str:
+        return json.dumps(asdict(self), ensure_ascii=False, sort_keys=True)
+
+
+def event_code_name(event_type: int, code: int) -> str:
+    names: Any = ecodes.bytype.get(event_type, {}).get(code)
+    if names is None:
+        return f"UNKNOWN_{code}"
+    if isinstance(names, tuple):
+        return str(names[-1])
+    return str(names)
+
+
+def normalize_axis(value: int, info: AbsInfo) -> float:
+    """Normalize an evdev absolute axis around its midpoint to [-1.0, 1.0]."""
+
+    minimum = info.min
+    maximum = info.max
+    if maximum <= minimum:
+        return 0.0
+    center = (minimum + maximum) / 2.0
+    if value >= center:
+        denominator = maximum - center
+    else:
+        denominator = center - minimum
+    if denominator <= 0:
+        return 0.0
+    normalized = (value - center) / denominator
+    return max(-1.0, min(1.0, normalized))
+
+
+def normalize_event(
+    event: InputEvent, *, absinfo: AbsInfo | None = None
+) -> NormalizedEvent | None:
+    if event.type == ecodes.EV_KEY:
+        states = {0: "released", 1: "pressed", 2: "repeat"}
+        return NormalizedEvent(
+            kind="button",
+            control=event_code_name(event.type, event.code),
+            code=event.code,
+            value=float(event.value),
+            state=states.get(event.value, "unknown"),
+            timestamp=event.timestamp(),
+        )
+    if event.type == ecodes.EV_ABS and absinfo is not None:
+        return NormalizedEvent(
+            kind="axis",
+            control=event_code_name(event.type, event.code),
+            code=event.code,
+            value=normalize_axis(event.value, absinfo),
+            state=None,
+            timestamp=event.timestamp(),
+        )
+    return None
