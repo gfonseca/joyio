@@ -1,4 +1,4 @@
-"""Normalization of Linux input events into phase-zero diagnostic events."""
+"""Normalization of Linux input events into canonical JoyIO events."""
 
 from __future__ import annotations
 
@@ -8,11 +8,15 @@ from typing import Any
 
 from evdev import AbsInfo, InputEvent, ecodes
 
+from joyio.controls import JoyConSide, canonical_control
+
 
 @dataclass(frozen=True, slots=True)
 class NormalizedEvent:
     kind: str
     control: str
+    source_control: str
+    side: JoyConSide
     code: int
     value: float
     state: str | None
@@ -27,6 +31,10 @@ def event_code_name(event_type: int, code: int) -> str:
     if names is None:
         return f"UNKNOWN_{code}"
     if isinstance(names, tuple):
+        gamepad_directions = {"BTN_SOUTH", "BTN_EAST", "BTN_NORTH", "BTN_WEST"}
+        for name in names:
+            if name in gamepad_directions:
+                return str(name)
         return str(names[-1])
     return str(names)
 
@@ -50,13 +58,22 @@ def normalize_axis(value: int, info: AbsInfo) -> float:
 
 
 def normalize_event(
-    event: InputEvent, *, absinfo: AbsInfo | None = None
+    event: InputEvent,
+    *,
+    side: JoyConSide,
+    absinfo: AbsInfo | None = None,
 ) -> NormalizedEvent | None:
+    source_control = event_code_name(event.type, event.code)
+    control = canonical_control(side, event.type, event.code)
+    if control is None:
+        control = f"unmapped:{source_control.casefold()}"
     if event.type == ecodes.EV_KEY:
         states = {0: "released", 1: "pressed", 2: "repeat"}
         return NormalizedEvent(
             kind="button",
-            control=event_code_name(event.type, event.code),
+            control=control,
+            source_control=source_control,
+            side=side,
             code=event.code,
             value=float(event.value),
             state=states.get(event.value, "unknown"),
@@ -65,7 +82,9 @@ def normalize_event(
     if event.type == ecodes.EV_ABS and absinfo is not None:
         return NormalizedEvent(
             kind="axis",
-            control=event_code_name(event.type, event.code),
+            control=control,
+            source_control=source_control,
+            side=side,
             code=event.code,
             value=normalize_axis(event.value, absinfo),
             state=None,

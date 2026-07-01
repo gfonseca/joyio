@@ -6,7 +6,7 @@ Data do diagnóstico: 2026-07-01.
 
 A abordagem é viável neste equipamento. O sistema tem Bluetooth ativo, suporte de kernel para Joy-Con e `uinput`, Python ARM64 e uma biblioteca Python compatível compilada com sucesso. A CLI lista dispositivos pareados, solicita conexão e possui um leitor de botões/eixos normalizados.
 
-A única validação não concluída é a leitura de um Joy-Con físico: nenhum Joy-Con estava pareado durante a execução desta fase. O software relata essa condição de forma acionável e os parsers foram testados com dados simulados.
+Durante o diagnóstico inicial nenhum Joy-Con estava pareado. Posteriormente, Joy-Con L e R originais foram pareados pelo GNOME e usados para concluir o checkpoint físico; os resultados estão registrados em `FASE_1.md`.
 
 ## Diagnóstico do ambiente
 
@@ -23,9 +23,9 @@ A única validação não concluída é a leitura de um Joy-Con físico: nenhum 
 | `CONFIG_INPUT_UINPUT` | módulo disponível e carregado |
 | `/dev/uinput` | presente |
 | Bibliotecas Python | `evdev 1.9.3` compilado para CPython 3.12/aarch64 no `.venv` |
-| Joy-Con pareado | nenhum |
-| Outros dispositivos Bluetooth | três conhecidos; nenhum identificado como Joy-Con |
-| Permissão evdev do usuário | usuário não pertence ao grupo `input`; ajuste será necessário para teste físico |
+| Joy-Con pareado no diagnóstico inicial | nenhum |
+| Validação posterior | Joy-Con L e R reconhecidos e lidos por evdev |
+| Permissão evdev | acesso concedido à sessão local por `TAG+=uaccess` |
 
 O kernel anuncia suporte aos IDs Bluetooth Nintendo `057e:2006` (Joy-Con L) e `057e:2007` (Joy-Con R). O módulo não aparece carregado enquanto nenhum controle compatível está conectado, comportamento esperado.
 
@@ -127,22 +127,21 @@ python3 -m venv .venv
 - `joyio inspect --device right` retornou código `2` e orientação para executar `joyio list`;
 - módulos e nós de kernel foram inspecionados no sistema real.
 
-### Pendente com hardware
+### Checkpoint de hardware concluído posteriormente
 
-- parear Joy-Con L e/ou R original;
-- confirmar nome e endereço apresentados por `joyio list`;
-- confirmar que `hid_nintendo` carrega e cria o evdev;
-- capturar um botão e um eixo com `joyio inspect`;
-- confirmar `Ctrl+C` e desconexão durante leitura;
-- registrar códigos, limites e valores de todos os controles como fixtures.
+- Joy-Con L e R originais pareados e apresentados por `joyio list`;
+- `hid_nintendo` carregado e dispositivos evdev criados;
+- botões e eixos de ambos os lados capturados;
+- `Ctrl+C` confirmado com fechamento limpo;
+- catálogos anonimizados registrados em `tests/fixtures/`;
+- desconexão tratada e testada automaticamente; prova manual controlada permanece para robustez.
 
 ## Riscos confirmados
 
-1. O usuário atual não pertence ao grupo `input`; sem regra/ACL, a leitura evdev será negada.
-2. Não há hardware Joy-Con pareado, então a compatibilidade física ainda não está demonstrada.
-3. A Fase 0 identifica dispositivos BlueZ pelo nome oficial; clones ficam fora do escopo.
-4. O uso de `bluetoothctl` é adequado à prova, mas uma integração D-Bus será mais robusta para serviço e reconexão.
-5. O ambiente de desenvolvimento isolado pode bloquear D-Bus e `/dev`; diagnósticos de hardware precisam executar com acesso ao host.
+1. O acesso atual depende da ACL de sessão (`uaccess`); um serviço de sistema precisará de outra política explícita.
+2. A Fase 0 identifica dispositivos BlueZ pelo nome oficial; clones ficam fora do escopo.
+3. O uso de `bluetoothctl` é adequado à prova, mas uma integração D-Bus será mais robusta para serviço e reconexão.
+4. Ambientes isolados podem bloquear D-Bus e `/dev`; diagnósticos de hardware precisam executar com acesso ao host.
 
 ## Ajuste proposto para a Fase 1
 

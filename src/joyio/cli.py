@@ -1,4 +1,4 @@
-"""Command-line entry point for the phase-zero proof of concept."""
+"""Command-line entry point for JoyIO input inspection."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ EXIT_INPUT = 4
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="joyio", description="JoyIO — prova de conceito da Fase 0"
+        prog="joyio", description="JoyIO — captura canônica de eventos Joy-Con"
     )
     parser.add_argument("--version", action="version", version=__version__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -85,19 +85,25 @@ def _inspect_command(selector: str, timeout: float) -> int:
         print(str(error), file=sys.stderr)
         return EXIT_NOT_FOUND
 
-    print(f"Joy-Con selecionado: {device.name} [{device.address}]")
+    print(
+        f"Joy-Con selecionado: {device.name} [{device.address}]", file=sys.stderr
+    )
     changed = connect_device(device.address)
-    print("Conexão Bluetooth solicitada." if changed else "Joy-Con já conectado.")
+    print(
+        "Conexão Bluetooth solicitada." if changed else "Joy-Con já conectado.",
+        file=sys.stderr,
+    )
     input_device = wait_for_input(device.address, timeout=timeout)
     print(
         f"Lendo {input_device.path} ({input_device.name}). "
-        "Pressione botões/mova o analógico; Ctrl+C encerra."
+        "Pressione botões/mova o analógico; Ctrl+C encerra.",
+        file=sys.stderr,
     )
     try:
-        for event in read_normalized_events(input_device.path):
+        for event in read_normalized_events(input_device.path, input_device.side):
             print(event.to_json(), flush=True)
     except KeyboardInterrupt:
-        print("\nEncerramento solicitado; leitor fechado.")
+        print("\nEncerramento solicitado; leitor fechado.", file=sys.stderr)
     return EXIT_OK
 
 

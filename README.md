@@ -1,6 +1,6 @@
 # JoyIO
 
-Prova de conceito em Python para localizar Joy-Cons pareados no Linux, conectar um controle e imprimir seus eventos de botão e eixo normalizados.
+Aplicação Python para localizar Joy-Cons pareados no Linux, conectar um controle e imprimir eventos normalizados com nomes estáveis do JoyIO.
 
 ## O que já funciona
 
@@ -8,11 +8,12 @@ Prova de conceito em Python para localizar Joy-Cons pareados no Linux, conectar 
 - selecionar um controle pelo lado (`left` ou `right`) ou endereço Bluetooth;
 - solicitar a conexão quando o controle estiver desconectado;
 - localizar o dispositivo evdev criado pelo driver `hid_nintendo`;
-- imprimir transições de botões e valores normalizados dos eixos em JSON;
+- traduzir todos os botões e eixos de Joy-Con L/R para nomes canônicos;
+- imprimir transições de botões e valores normalizados dos eixos como JSONL puro;
 - encerrar a leitura com `Ctrl+C` fechando o dispositivo corretamente;
 - informar erros de Bluetooth, seleção, permissão e dispositivo por códigos de saída distintos.
 
-O estado atual corresponde somente à **Fase 0**. Ainda não há mapeamento YAML nem emissão de teclado e mouse.
+O projeto está na **Fase 1**. Ainda não há mapeamento YAML nem emissão de teclado e mouse.
 
 ## Ambiente suportado nesta fase
 
@@ -41,7 +42,7 @@ Confirme a instalação:
 
 Não é necessário ativar o ambiente virtual. Os exemplos usam os executáveis dentro de `.venv` explicitamente para evitar executar outro Python por engano.
 
-## Pareamento manual da Fase 0
+## Pareamento atual
 
 O programa ainda não gerencia o pareamento. Inicie `bluetoothctl`, mantenha pressionado o botão de sincronização do Joy-Con até os LEDs correrem e use:
 
@@ -97,26 +98,60 @@ Usar o endereço remove ambiguidades quando há mais de um Joy-Con do mesmo lado
 1. confirma que o Joy-Con está pareado;
 2. solicita a conexão Bluetooth, se necessária;
 3. espera o nó evdev aparecer;
-4. imprime um objeto JSON para cada evento de botão ou eixo.
+4. imprime um objeto JSON para cada evento de botão ou eixo em `stdout`.
+
+Mensagens de conexão e diagnóstico são escritas em `stderr`. Portanto, este comando cria um arquivo JSONL válido sem misturar cabeçalhos textuais:
+
+```bash
+.venv/bin/joyio inspect --device right > out-right.jsonl
+```
 
 Exemplo de saída:
 
 ```json
-{"code": 304, "control": "BTN_SOUTH", "kind": "button", "state": "pressed", "timestamp": 1751391000.25, "value": 1.0}
-{"code": 304, "control": "BTN_SOUTH", "kind": "button", "state": "released", "timestamp": 1751391000.34, "value": 0.0}
-{"code": 0, "control": "ABS_X", "kind": "axis", "state": null, "timestamp": 1751391001.12, "value": 0.72}
+{"code": 305, "control": "a", "kind": "button", "side": "right", "source_control": "BTN_EAST", "state": "pressed", "timestamp": 1751391000.25, "value": 1.0}
+{"code": 305, "control": "a", "kind": "button", "side": "right", "source_control": "BTN_EAST", "state": "released", "timestamp": 1751391000.34, "value": 0.0}
+{"code": 3, "control": "right_stick_x", "kind": "axis", "side": "right", "source_control": "ABS_RX", "state": null, "timestamp": 1751391001.12, "value": 0.72}
 ```
 
 Campos dos eventos:
 
 - `kind`: `button` ou `axis`;
-- `control`: código evdev apresentado pelo kernel;
+- `control`: nome canônico e estável do JoyIO;
+- `source_control`: código evdev apresentado pelo kernel, mantido para diagnóstico;
+- `side`: `left` ou `right`;
 - `code`: valor numérico desse código;
 - `state`: `pressed`, `released` ou `repeat` para botões; `null` para eixos;
 - `value`: estado numérico do botão ou eixo normalizado entre `-1.0` e `1.0`;
 - `timestamp`: instante do evento informado pelo kernel.
 
 Pressione `Ctrl+C` para encerrar.
+
+## Controles canônicos
+
+Joy-Con L:
+
+| Controle físico | Nome JoyIO |
+|---|---|
+| Analógico | `left_stick_x`, `left_stick_y` |
+| Clique do analógico | `left_stick_press` |
+| Direcional | `dpad_up`, `dpad_down`, `dpad_left`, `dpad_right` |
+| L / ZL | `l`, `zl` |
+| SL / SR | `sl`, `sr` |
+| Menos / Capture | `minus`, `capture` |
+
+Joy-Con R:
+
+| Controle físico | Nome JoyIO |
+|---|---|
+| Analógico | `right_stick_x`, `right_stick_y` |
+| Clique do analógico | `right_stick_press` |
+| A / B / X / Y | `a`, `b`, `x`, `y` |
+| R / ZR | `r`, `zr` |
+| SL / SR | `sl`, `sr` |
+| Mais / Home | `plus`, `home` |
+
+O campo `side` diferencia SL/SR quando os dois controles forem usados simultaneamente no futuro. Códigos evdev não reconhecidos são preservados como `unmapped:<código>` para não esconder lacunas do driver.
 
 ### 3. Ajuste o tempo de espera
 
@@ -151,6 +186,8 @@ sudo usermod -aG input "$USER"
 ```
 
 É necessário encerrar e iniciar a sessão depois. Esse grupo permite ler outros dispositivos de entrada, inclusive teclado, portanto é amplo demais para a instalação final. Antes de transformar o programa em serviço, crie uma regra udev específica para os Joy-Cons e conceda somente o acesso necessário.
+
+O projeto fornece uma regra restrita aos IDs oficiais de Joy-Con L/R em `config/udev/70-joyio.rules`. Ambientes GNOME normalmente já aplicam `TAG+=uaccess` para joysticks da sessão ativa; instale a regra somente se esse acesso não estiver disponível.
 
 Confirme a participação no grupo depois de entrar novamente:
 
@@ -198,15 +235,15 @@ bluetoothctl show
 .venv/bin/pytest
 ```
 
-Os testes unitários usam respostas BlueZ e eventos evdev simulados; não precisam de Bluetooth, root ou controle físico. A validação manual exige um Joy-Con original pareado.
+Os testes unitários usam respostas BlueZ, eventos evdev simulados e catálogos anonimizados obtidos das capturas reais. Eles não precisam de Bluetooth, root ou controle físico.
 
 ## Limitações atuais
 
 - somente Joy-Cons originais L/R, um por execução;
 - pareamento feito manualmente;
 - identificação Bluetooth pelo nome oficial do produto;
-- nomes de controles ainda são códigos evdev (`BTN_*` e `ABS_*`), não nomes canônicos JoyIO;
+- drift/dead zone e redução da frequência dos analógicos serão tratados no motor de mapeamento;
 - não há reconexão, YAML, `uinput`, mouse, teclado ou serviço `systemd`;
-- eventos físicos ainda precisam ser validados com hardware pareado neste ambiente.
+- desconexão física durante captura tem teste automatizado, mas ainda precisa de uma prova manual controlada.
 
-Consulte [FASE_0.md](FASE_0.md) para diagnóstico, decisão técnica e resultados.
+Consulte [FASE_0.md](FASE_0.md) para o diagnóstico inicial e [FASE_1.md](FASE_1.md) para o contrato atual.

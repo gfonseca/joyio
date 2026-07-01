@@ -1,0 +1,2 @@
+# Grant the active local session access only to original Joy-Con L/R evdev nodes.
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{id/vendor}=="057e", ATTRS{id/product}=="200[67]", TAG+="uaccess"

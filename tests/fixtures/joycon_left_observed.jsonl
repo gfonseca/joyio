@@ -1,0 +1,13 @@
+{"side":"left","kind":"axis","code":0,"source_control":"ABS_X","control":"left_stick_x","observed_min":-1.0,"observed_max":0.6749778741}
+{"side":"left","kind":"axis","code":1,"source_control":"ABS_Y","control":"left_stick_y","observed_min":-1.0,"observed_max":0.9972228156}
+{"side":"left","kind":"button","code":544,"source_control":"BTN_DPAD_UP","control":"dpad_up"}
+{"side":"left","kind":"button","code":545,"source_control":"BTN_DPAD_DOWN","control":"dpad_down"}
+{"side":"left","kind":"button","code":546,"source_control":"BTN_DPAD_LEFT","control":"dpad_left"}
+{"side":"left","kind":"button","code":547,"source_control":"BTN_DPAD_RIGHT","control":"dpad_right"}
+{"side":"left","kind":"button","code":314,"source_control":"BTN_SELECT","control":"minus"}
+{"side":"left","kind":"button","code":317,"source_control":"BTN_THUMBL","control":"left_stick_press"}
+{"side":"left","kind":"button","code":310,"source_control":"BTN_TL","control":"l"}
+{"side":"left","kind":"button","code":312,"source_control":"BTN_TL2","control":"zl"}
+{"side":"left","kind":"button","code":311,"source_control":"BTN_TR","control":"sl"}
+{"side":"left","kind":"button","code":313,"source_control":"BTN_TR2","control":"sr"}
+{"side":"left","kind":"button","code":309,"source_control":"BTN_Z","control":"capture"}

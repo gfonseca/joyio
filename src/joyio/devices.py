@@ -9,11 +9,12 @@ from typing import Iterator
 
 from evdev import InputDevice, InputEvent, ecodes, list_devices
 
+from joyio.controls import JoyConSide
 from joyio.events import NormalizedEvent, normalize_event
 
 
 NINTENDO_VENDOR_ID = 0x057E
-JOYCON_PRODUCTS = {
+JOYCON_PRODUCTS: dict[int, JoyConSide] = {
     0x2006: "left",
     0x2007: "right",
 }
@@ -28,7 +29,7 @@ class JoyConInput:
     path: str
     name: str
     address: str
-    side: str
+    side: JoyConSide
 
 
 def _is_joycon(device: InputDevice) -> bool:
@@ -39,7 +40,7 @@ def _is_joycon(device: InputDevice) -> bool:
     return ids_match or "joy-con" in device.name.casefold()
 
 
-def _side(device: InputDevice) -> str:
+def _side(device: InputDevice) -> JoyConSide:
     by_id = JOYCON_PRODUCTS.get(device.info.product)
     if by_id is not None:
         return by_id
@@ -48,7 +49,7 @@ def _side(device: InputDevice) -> str:
         return "left"
     if "right" in name or "(r)" in name:
         return "right"
-    return "unknown"
+    raise InputDeviceError(f"não foi possível determinar o lado de {device.name!r}")
 
 
 def list_joycon_inputs() -> list[JoyConInput]:
@@ -100,7 +101,9 @@ def wait_for_input(address: str, timeout: float = 8.0) -> JoyConInput:
     )
 
 
-def read_normalized_events(device_path: str) -> Iterator[NormalizedEvent]:
+def read_normalized_events(
+    device_path: str, side: JoyConSide
+) -> Iterator[NormalizedEvent]:
     try:
         device = InputDevice(device_path)
     except (FileNotFoundError, PermissionError) as error:
@@ -112,7 +115,7 @@ def read_normalized_events(device_path: str) -> Iterator[NormalizedEvent]:
             if event.type == ecodes.EV_ABS:
                 with suppress(OSError):
                     absinfo = device.absinfo(event.code)
-            normalized = normalize_event(event, absinfo=absinfo)
+            normalized = normalize_event(event, side=side, absinfo=absinfo)
             if normalized is not None:
                 yield normalized
     except OSError as error:

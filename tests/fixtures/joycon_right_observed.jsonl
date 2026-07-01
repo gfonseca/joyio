@@ -1,0 +1,11 @@
+{"side":"right","kind":"axis","code":3,"source_control":"ABS_RX","control":"right_stick_x","observed_min":-0.9464400159,"observed_max":0.9970397046}
+{"side":"right","kind":"axis","code":4,"source_control":"ABS_RY","control":"right_stick_y","observed_min":-0.9379558702,"observed_max":1.0}
+{"side":"right","kind":"button","code":305,"source_control":"BTN_EAST","control":"a"}
+{"side":"right","kind":"button","code":304,"source_control":"BTN_SOUTH","control":"b"}
+{"side":"right","kind":"button","code":307,"source_control":"BTN_NORTH","control":"x"}
+{"side":"right","kind":"button","code":308,"source_control":"BTN_WEST","control":"y"}
+{"side":"right","kind":"button","code":311,"source_control":"BTN_TR","control":"r"}
+{"side":"right","kind":"button","code":313,"source_control":"BTN_TR2","control":"zr"}
+{"side":"right","kind":"button","code":315,"source_control":"BTN_START","control":"plus"}
+{"side":"right","kind":"button","code":318,"source_control":"BTN_THUMBR","control":"right_stick_press"}
+{"side":"right","kind":"button","code":316,"source_control":"BTN_MODE","control":"home"}

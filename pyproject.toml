@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "joyio"
-version = "0.0.1"
-description = "Linux Joy-Con input proof of concept"
+version = "0.1.0"
+description = "Canonical Joy-Con input events for Linux"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
