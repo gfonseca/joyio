@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
+from queue import Empty
 import sys
 import time
 
@@ -21,6 +22,8 @@ def _reload_config(
     output: OutputBackend,
     watcher: object | None = None,
     now: float = 0.0,
+    *,
+    force: bool = False,
 ) -> None:
     """Attempt atomic config reload; log result to stderr.
 
@@ -28,7 +31,7 @@ def _reload_config(
     When provided, reloads are gated on both filename-match (consume) and
     debounce timing.
     """
-    if watcher is not None:
+    if watcher is not None and not force:
         # consume() reads inotify events and returns True only when our
         # filename is among them (filters out unrelated directory noise).
         if hasattr(watcher, "consume"):
@@ -48,6 +51,50 @@ def _reload_config(
     print(f"  config: recarregada — {path}", file=sys.stderr)
 
 
+def _drain_control_queue(
+    control_queue: object | None,
+    engine: MappingEngine,
+    output: OutputBackend,
+    on_mode_change: Callable[[bool], None] | None,
+    *,
+    reload_path: str,
+    config_watcher: object | None,
+    now: float,
+) -> bool:
+    """Consume tray/control commands.
+
+    Returns True when a quit request was received.
+    """
+    if control_queue is None:
+        return False
+
+    while True:
+        try:
+            command = control_queue.get_nowait()  # type: ignore[attr-defined]
+        except Empty:
+            return False
+
+        if command == "toggle":
+            changed = engine.set_enabled(not engine.enabled)
+            if changed:
+                output.emit(changed)
+            if on_mode_change is not None:
+                on_mode_change(engine.enabled)
+        elif command == "reload":
+            _reload_config(
+                reload_path,
+                engine,
+                output,
+                config_watcher,
+                now,
+                force=True,
+            )
+            if on_mode_change is not None:
+                on_mode_change(engine.enabled)
+        elif command == "quit":
+            return True
+
+
 def run_mapping(
     inputs: Sequence[JoyConInput],
     engine: MappingEngine,
@@ -59,6 +106,7 @@ def run_mapping(
     config_fd: int | None = None,
     config_path: str = "",
     config_watcher: object | None = None,
+    control_queue: object | None = None,
 ) -> None:
     """Run until interrupted or disconnected, always releasing held outputs."""
 
@@ -70,6 +118,17 @@ def run_mapping(
             config_fd=config_fd,
             config_path=config_path,
         ):
+            control_now = clock() if control_queue is not None else 0.0
+            if _drain_control_queue(
+                control_queue,
+                engine,
+                output,
+                on_mode_change,
+                reload_path=config_path,
+                config_watcher=config_watcher,
+                now=control_now,
+            ):
+                raise KeyboardInterrupt("tray requested quit")
             if isinstance(event, ConfigFileChanged):
                 _reload_config(event.path, engine, output, config_watcher, clock())
                 continue
@@ -115,6 +174,7 @@ def run_managed_mapping(
     config_fd: int | None = None,
     config_path: str = "",
     config_watcher: object | None = None,
+    control_queue: object | None = None,
 ) -> None:
     """Keep one output session while Joy-Con sides come and go independently."""
 
@@ -129,6 +189,17 @@ def run_managed_mapping(
             config_path=config_path,
         ):
             now = clock()
+            control_now = now if control_queue is not None else 0.0
+            if _drain_control_queue(
+                control_queue,
+                engine,
+                output,
+                on_mode_change,
+                reload_path=config_path,
+                config_watcher=config_watcher,
+                now=control_now,
+            ):
+                raise KeyboardInterrupt("tray requested quit")
             if isinstance(event, ConfigFileChanged):
                 _reload_config(event.path, engine, output, config_watcher, now)
                 continue

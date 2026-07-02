@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from queue import Empty
+
 import pytest
 
 from joyio.config.models import (
     JoyIOConfig,
     KeyMapping,
     ReconnectConfig,
+    RuntimeConfig,
     ToggleMapping,
 )
 from joyio.devices import InputDeviceError, JoyConInput
@@ -31,6 +34,16 @@ class RecordingOutput:
 
     def close(self) -> None:
         self.closed = True
+
+
+class ControlQueue:
+    def __init__(self, commands) -> None:
+        self._commands = list(commands)
+
+    def get_nowait(self):
+        if not self._commands:
+            raise Empty
+        return self._commands.pop(0)
 
 
 def test_runtime_releases_output_after_input_failure(monkeypatch) -> None:
@@ -267,4 +280,57 @@ def test_runtime_toggle_releases_outputs_and_recovers_without_restart(monkeypatc
     ]
     assert mode_changes == [False, True]
     assert output.released is True
+    assert output.closed is True
+
+
+def test_runtime_consumes_tray_toggle_commands(monkeypatch) -> None:
+    events = iter([None])
+    monkeypatch.setattr(controller, "read_runtime_events", lambda inputs, **kwargs: events)
+    output = RecordingOutput()
+    engine = MappingEngine(JoyIOConfig(version=1))
+    mode_changes = []
+
+    controller.run_mapping(
+        (),
+        engine,
+        output,
+        on_mode_change=mode_changes.append,
+        control_queue=ControlQueue(["toggle"]),
+    )
+
+    assert mode_changes == [False]
+    assert output.closed is True
+
+
+def test_runtime_consumes_tray_reload_commands(monkeypatch) -> None:
+    events = iter([None])
+    monkeypatch.setattr(controller, "read_runtime_events", lambda inputs, **kwargs: events)
+    loaded = []
+    monkeypatch.setattr(
+        controller,
+        "load_config",
+        lambda path: loaded.append(path) or JoyIOConfig(
+            version=1, runtime=RuntimeConfig(enabled=False)
+        ),
+    )
+    output = RecordingOutput()
+    engine = MappingEngine(JoyIOConfig(version=1))
+    mode_changes = []
+
+    controller.run_mapping(
+        (),
+        engine,
+        output,
+        on_mode_change=mode_changes.append,
+        config_path="/tmp/joyio.yaml",
+        config_watcher=type(
+            "Watcher",
+            (),
+            {"consume": lambda self: False, "debounce": lambda self, now: False},
+        )(),
+        control_queue=ControlQueue(["reload"]),
+    )
+
+    assert mode_changes == [False]
+    assert loaded == ["/tmp/joyio.yaml"]
     assert output.closed is True

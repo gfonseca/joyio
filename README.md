@@ -436,16 +436,24 @@ systemctl status bluetooth
 bluetoothctl show
 ```
 
+### Bandeja do sistema
+
+Se o ambiente tiver suporte a StatusNotifierItem/AppIndicator, o JoyIO mostra um ícone na bandeja com estado visual do mapeamento.
+
+- clique primário: alterna o mapeamento ligado/desligado;
+- clique secundário: recarrega o YAML atual;
+- clique com menu/contexto: abre o arquivo de configuração no editor padrão.
+
 ## Estado atual
 
-O JoyIO está na Fase 3. O mapeamento de teclado/mouse, perfil YAML, scroll bidimensional, reconexão independente por lado e o toggle de mapping já funcionam. As próximas entregas previstas são o aumento temporário de ponteiro, execução como serviço e interface de bandeja.
+O JoyIO está na Fase 3. O mapeamento de teclado/mouse, perfil YAML, scroll bidimensional, reconexão independente por lado, toggle de mapping, hot reload de configuração e bandeja de sistema já funcionam. As próximas entregas previstas são o aumento temporário de ponteiro e o refinamento da interface de bandeja.
 
 Limitações atuais:
 
 - requer um Joy-Con original L e um R;
 - o pareamento ainda é feito pelo sistema operacional;
 - a execução acontece em foreground;
-- alterações no YAML exigem reiniciar o comando;
+- alterações no YAML são recarregadas em tempo de execução;
 - o teste físico completo da reconexão independente ainda precisa ser repetido nos dois lados.
 
 ## Desenvolvimento e documentação técnica

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import os
 import pathlib
+from queue import SimpleQueue
 import shutil
 import signal
 import subprocess
@@ -25,6 +26,7 @@ from joyio.mapping import MappingEngine
 from joyio.output import DryRunOutput, OutputError, UInputOutput
 from joyio.runtime import run_managed_mapping, run_mapping
 from joyio.runtime.watcher import ConfigWatcher
+from joyio.tray import JoyIOTray
 
 
 def _handle_terminate(signum: int, frame: object) -> None:
@@ -239,6 +241,15 @@ def _run_command(
         )
     mode = "dry-run" if dry_run else "uinput"
     watcher = _create_watcher(path)
+    control_queue = None if dry_run else SimpleQueue()
+    tray = (
+        None
+        if dry_run
+        else JoyIOTray(
+            str(pathlib.Path(path).resolve()),
+            on_action=control_queue.put if control_queue is not None else None,
+        )
+    )
     try:
         config_fd = watcher.fd if watcher else None
         config_full_path = str(pathlib.Path(path).resolve())
@@ -264,7 +275,12 @@ def _run_command(
             def report_mode(enabled: bool) -> None:
                 state = "enabled" if enabled else "disabled"
                 print(f"  mapping: {state}", file=sys.stderr)
+                if tray is not None:
+                    tray.set_mapping_enabled(enabled)
 
+            if tray is not None:
+                tray.start()
+                tray.set_mapping_enabled(config.runtime.enabled)
             run_mapping(
                 inputs,
                 MappingEngine(config),
@@ -273,6 +289,7 @@ def _run_command(
                 config_fd=config_fd,
                 config_path=config_full_path,
                 config_watcher=watcher,
+                control_queue=control_queue,
             )
         else:
             addresses = {device.side: device.address for device in selected}
@@ -299,26 +316,36 @@ def _run_command(
                 f"  mapping: {'enabled' if config.runtime.enabled else 'disabled'}",
                 file=sys.stderr,
             )
+
+            def report_mode(enabled: bool) -> None:
+                state = "enabled" if enabled else "disabled"
+                print(f"  mapping: {state}", file=sys.stderr)
+                if tray is not None:
+                    tray.set_mapping_enabled(enabled)
+
             try:
+                if tray is not None:
+                    tray.start()
+                    tray.set_mapping_enabled(config.runtime.enabled)
                 run_managed_mapping(
                     addresses,
                     MappingEngine(config),
                     output,
                     connector.maintain,
                     on_device_status=report_device,
-                    on_mode_change=lambda enabled: print(
-                        f"  mapping: {'enabled' if enabled else 'disabled'}",
-                        file=sys.stderr,
-                    ),
+                    on_mode_change=report_mode,
                     config_fd=config_fd,
                     config_path=config_full_path,
                     config_watcher=watcher,
+                    control_queue=control_queue,
                 )
             finally:
                 connector.close()
     except KeyboardInterrupt:
         print("\nEncerramento solicitado; entradas liberadas.", file=sys.stderr)
     finally:
+        if tray is not None:
+            tray.stop()
         if watcher is not None:
             watcher.close()
     return EXIT_OK

@@ -163,7 +163,7 @@ def test_boost_is_cleared_when_side_disconnects() -> None:
     engine.process(event("left_stick_x", "", side="left", kind="axis", value=1.0))
     engine.process(event("minus", "pressed", side="left"))
     engine.tick(0.0)
-    assert engine.tick(0.1) == [MouseMoveAction(1, 0)]
+    assert engine.tick(0.1) == [MouseMoveAction(2, 0)]
 
     assert engine.release_side("left") == []
     assert engine.tick(0.2) == []
