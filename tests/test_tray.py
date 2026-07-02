@@ -13,6 +13,13 @@ def test_sni_properties_expose_theme_icon_and_status() -> None:
     assert props["IconPixmap"][0] == "a(iiay)"
     assert len(props["IconPixmap"][1]) == 1
     assert props["IconPixmap"][1] != paused["IconPixmap"][1]
+    active_pixels = props["IconPixmap"][1][0][2]
+    assert active_pixels[(7 * 22 + 5) * 4 : (7 * 22 + 5) * 4 + 4] == bytes(
+        (33, 115, 204, 255)
+    )
+    assert active_pixels[(10 * 22 + 10) * 4 : (10 * 22 + 10) * 4 + 4] == bytes(
+        (255, 121, 31, 255)
+    )
 
 
 def test_menu_layout_and_event_dispatch(monkeypatch) -> None:

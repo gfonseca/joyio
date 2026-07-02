@@ -8,10 +8,35 @@ version = "0.3.0"
 description = "Joy-Con keyboard and mouse mapping for Linux"
 readme = "README.md"
 requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [
+    { name = "JoyIO contributors" },
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Desktop Environment",
+    "Topic :: System :: Hardware",
+    "Topic :: Utilities",
+]
+keywords = ["joycon", "nintendo", "input", "bluetooth", "uinput", "linux"]
 dependencies = [
     "evdev>=1.9,<2",
+    "jeepney>=0.9,<1",
     "PyYAML>=6.0,<7",
 ]
+
+license-files = ["LICENSE"]
+
+[project.urls]
+Homepage = "https://github.com/gfonseca/joyio"
+Repository = "https://github.com/gfonseca/joyio"
+Issues = "https://github.com/gfonseca/joyio/issues"
 
 [project.scripts]
 joyio = "joyio.cli:main"

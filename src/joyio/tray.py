@@ -81,10 +81,10 @@ def _controller_pixmaps(active: bool) -> list[tuple[int, int, bytes]]:
     size = 22
     pixels = bytearray(size * size * 4)
     if active:
-        body = (56, 168, 96, 255)
-        edge = (28, 84, 48, 255)
-        buttons = (236, 252, 238, 255)
-        dpad = (18, 64, 34, 255)
+        body = (255, 121, 31, 255)
+        edge = (33, 115, 204, 255)
+        buttons = (244, 244, 244, 255)
+        dpad = (19, 79, 145, 255)
     else:
         body = (166, 166, 166, 255)
         edge = (116, 116, 116, 255)

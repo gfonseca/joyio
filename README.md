@@ -45,6 +45,24 @@ Confirme a instalação:
 
 Os exemplos usam `.venv/bin/joyio` diretamente, portanto não é necessário ativar o ambiente virtual.
 
+## Publicação no PyPI
+
+O projeto já está preparado para publicação no PyPI via GitHub Actions com Trusted Publishing.
+
+Fluxo recomendado:
+
+1. criar um release no GitHub;
+2. registrar o publisher do repositório em PyPI;
+3. deixar a action `.github/workflows/publish.yml` enviar `sdist` e `wheel` automaticamente.
+
+Para checagem local, o processo padrão continua sendo:
+
+```bash
+python3 -m pip install --upgrade build twine
+python3 -m build
+python3 -m twine check dist/*
+```
+
 ## Primeiros passos
 
 ### 1. Pareie os dois Joy-Cons
