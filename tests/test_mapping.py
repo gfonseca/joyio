@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from joyio.config.models import (
+    BoostMapping,
     JoyIOConfig,
     KeyChordMapping,
     KeyMapping,
@@ -99,6 +100,73 @@ def test_same_named_rail_buttons_are_independent_between_sides() -> None:
     assert engine.process(event("sl", "released", side="left")) == [
         KeyAction("KEY_Q", False)
     ]
+
+
+def test_boost_amplifies_mouse_only_while_held() -> None:
+    mouse = MouseConfig(
+        stick="left_stick",
+        dead_zone=0.0,
+        sensitivity=10.0,
+        acceleration=1.0,
+        max_speed=100.0,
+        invert_x=False,
+        invert_y=False,
+    )
+    base_engine = MappingEngine(
+        JoyIOConfig(
+            version=1,
+            mouse=mouse,
+        )
+    )
+    boosted_engine = MappingEngine(
+        JoyIOConfig(
+            version=1,
+            mouse=mouse,
+            buttons={"left.minus": BoostMapping(2.5)},
+        )
+    )
+
+    base_engine.process(event("left_stick_x", "", side="left", kind="axis", value=1.0))
+    base_engine.tick(0.0)
+    assert base_engine.tick(0.1) == [MouseMoveAction(1, 0)]
+
+    boosted_engine.process(
+        event("left_stick_x", "", side="left", kind="axis", value=1.0)
+    )
+    boosted_engine.tick(0.0)
+    assert boosted_engine.process(event("minus", "pressed", side="left")) == []
+    assert boosted_engine.tick(0.1) == [MouseMoveAction(2, 0)]
+
+    assert boosted_engine.process(event("minus", "released", side="left", value=0.0)) == []
+    assert boosted_engine.tick(0.2) == [MouseMoveAction(1, 0)]
+    assert boosted_engine.tick(0.3) == [MouseMoveAction(1, 0)]
+
+
+def test_boost_is_cleared_when_side_disconnects() -> None:
+    mouse = MouseConfig(
+        stick="left_stick",
+        dead_zone=0.0,
+        sensitivity=10.0,
+        acceleration=1.0,
+        max_speed=100.0,
+        invert_x=False,
+        invert_y=False,
+    )
+    engine = MappingEngine(
+        JoyIOConfig(
+            version=1,
+            mouse=mouse,
+            buttons={"left.minus": BoostMapping(2.5)},
+        )
+    )
+
+    engine.process(event("left_stick_x", "", side="left", kind="axis", value=1.0))
+    engine.process(event("minus", "pressed", side="left"))
+    engine.tick(0.0)
+    assert engine.tick(0.1) == [MouseMoveAction(1, 0)]
+
+    assert engine.release_side("left") == []
+    assert engine.tick(0.2) == []
 
 
 def test_mouse_uses_dead_zone_and_elapsed_time() -> None:

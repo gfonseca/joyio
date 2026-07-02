@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 import select
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
@@ -10,7 +11,12 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from evdev import AbsInfo, InputDevice, InputEvent, ecodes, list_devices
 
 from joyio.controls import JoyConSide
-from joyio.events import DeviceStatusEvent, NormalizedEvent, normalize_event
+from joyio.events import (
+    ConfigFileChanged,
+    DeviceStatusEvent,
+    NormalizedEvent,
+    normalize_event,
+)
 
 
 NINTENDO_VENDOR_ID = 0x057E
@@ -141,7 +147,9 @@ def read_runtime_events(
     inputs: Sequence[JoyConInput],
     *,
     tick_interval: float = 1.0 / 120.0,
-) -> Iterator[NormalizedEvent | None]:
+    config_fd: int | None = None,
+    config_path: str = "",
+) -> Iterator[NormalizedEvent | ConfigFileChanged | None]:
     """Multiplex Joy-Con inputs and yield normalized events plus periodic ticks."""
 
     opened: dict[int, tuple[InputDevice, JoyConInput]] = {}
@@ -157,14 +165,20 @@ def read_runtime_events(
             opened[device.fd] = (device, source)
             absinfo_caches[device.fd] = {}
 
-        file_descriptors = tuple(opened)
         while True:
-            readable, _, _ = select.select(file_descriptors, [], [], tick_interval)
+            fds = list(opened)
+            if config_fd is not None and config_fd >= 0:
+                fds.append(config_fd)
+            readable, _, _ = select.select(fds, [], [], tick_interval)
             if not readable:
                 yield None
                 continue
             yielded = False
             for fd in readable:
+                if config_fd is not None and fd == config_fd:
+                    if config_path:
+                        yield ConfigFileChanged(config_path)
+                    continue
                 device, source = opened[fd]
                 for event in device.read():
                     absinfo = None
@@ -200,7 +214,9 @@ def read_managed_events(
     discovery_interval: float = 0.5,
     discover: Discovery = list_joycon_inputs,
     clock: Callable[[], float] = time.monotonic,
-) -> Iterator[NormalizedEvent | DeviceStatusEvent | None]:
+    config_fd: int | None = None,
+    config_path: str = "",
+) -> Iterator[NormalizedEvent | DeviceStatusEvent | ConfigFileChanged | None]:
     """Read nodes dynamically so either Joy-Con can disappear and return."""
 
     opened: dict[
@@ -248,8 +264,11 @@ def read_managed_events(
                 device.fd: (side, device, source, cache)
                 for side, (device, source, cache) in opened.items()
             }
+            fds = list(by_fd)
+            if config_fd is not None and config_fd >= 0:
+                fds.append(config_fd)
             try:
-                readable, _, _ = select.select(tuple(by_fd), [], [], timeout)
+                readable, _, _ = select.select(fds, [], [], timeout)
             except (OSError, ValueError):
                 # A concurrently removed fd can make the grouped select fail.
                 # Probe each descriptor separately and detach only invalid ones.
@@ -265,12 +284,27 @@ def read_managed_events(
                     if side in opened:
                         yield detach(side)
                         next_discovery = 0.0
+                # Inotify fd is not in by_fd, so it survives the per-fd probe.
+                # If the original select included it and it's still valid, probe it.
+                if config_fd is not None and config_fd >= 0:
+                    try:
+                        ready, _, _ = select.select((config_fd,), [], [], 0.0)
+                        readable.extend(ready)
+                    except (OSError, ValueError):
+                        pass
             if not readable:
                 yield None
                 continue
 
             yielded = False
             for fd in readable:
+                if config_fd is not None and fd == config_fd:
+                    # The fd is readable; yield a sentinel.  The controller
+                    # calls ConfigWatcher.consume() to read the events, filter
+                    # by filename, and apply debounce.
+                    if config_path:
+                        yield ConfigFileChanged(config_path)
+                    continue
                 entry = by_fd.get(fd)
                 if entry is None:
                     continue

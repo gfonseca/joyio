@@ -1,0 +1,28 @@
+[Unit]
+Description=JoyIO — Joy-Con keyboard and mouse mapping
+Documentation=https://github.com/joyio/joyio
+After=graphical-session.target bluetooth.target
+Wants=bluetooth.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=@JOYIO_BIN@ run --config @CONFIG_PATH@
+Restart=on-failure
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=joyio
+
+# Clean shutdown: SIGTERM triggers the same KeyboardInterrupt path
+# used by Ctrl+C, so uinput devices and held keys are released.
+KillSignal=SIGTERM
+TimeoutStopSec=5
+
+# Per the project udev rule (config/udev/70-joyio.rules), the active
+# session needs read access to /dev/input/event* (Joy-Con evdev nodes)
+# and write access to /dev/uinput.  Both are granted by uaccess on logind
+# sessions; no additional privileges are required for a user service.
+
+[Install]
+WantedBy=graphical-session.target

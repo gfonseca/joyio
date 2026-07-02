@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from joyio.config import ConfigError, load_config
-from joyio.config.models import KeyChordMapping, MouseButtonMapping
+from joyio.config.models import BoostMapping, KeyChordMapping, MouseButtonMapping
 from joyio.config.models import ToggleMapping
 from joyio.controls import BUTTON_CONTROLS
 
@@ -34,6 +34,7 @@ def test_loads_example_configuration() -> None:
     assert config.scroll.stick == "right_stick"
     assert isinstance(config.buttons["right.a"], MouseButtonMapping)
     assert isinstance(config.buttons["right.x"], KeyChordMapping)
+    assert isinstance(config.buttons["left.minus"], BoostMapping)
     assert config.buttons["left.zl"] == MouseButtonMapping("left", "hold")
     assert config.buttons["left.l"] == MouseButtonMapping("right", "hold")
     assert config.buttons["right.zr"] == MouseButtonMapping("right", "hold")
@@ -78,6 +79,10 @@ def test_loads_example_configuration() -> None:
         (
             "version: 1\nruntime: {enabled: maybe}\n",
             "runtime.enabled",
+        ),
+        (
+            "version: 1\nmappings: {buttons: {left: {minus: {type: boost, factor: 0.5}}}}\n",
+            "mappings.buttons.left.minus.factor",
         ),
         (
             "version: 1\nmappings: {buttons: {left: {capture: {type: toggle, extra: true}}}}\n",

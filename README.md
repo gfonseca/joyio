@@ -222,6 +222,19 @@ mappings:
 
 Use `tap` para enviar uma ação completa ao pressionar o botão. Use `hold` quando a ação deve permanecer pressionada até soltar o botão físico.
 
+Para acelerar temporariamente o ponteiro, use `type: boost` em um botão dedicado:
+
+```yaml
+mappings:
+  buttons:
+    left:
+      minus:
+        type: boost
+        factor: 2.5
+```
+
+Enquanto o botão estiver pressionado, o movimento do mouse recebe o multiplicador configurado. O scroll não é afetado.
+
 Para alternar entre mapping ligado e desligado, use `type: toggle` em um botão que continue acessível enquanto o Joy-Con estiver pareado. O exemplo padrão usa `left.capture`:
 
 ```yaml

@@ -66,9 +66,8 @@ mappings:
         button: left
         mode: hold
       minus:
-        type: key
-        key: KEY_TAB
-        mode: tap
+        type: boost
+        factor: 2.5
       capture:
         type: toggle
       sl:

@@ -101,32 +101,56 @@ Critérios de aceite:
 - dead zone, direção e resíduos continuam corretos;
 - custo ocioso permanece equivalente ao baseline de [PERFORMANCE.md](../../PERFORMANCE.md).
 
-### Marco 3.4 — reload e perfis · P1/P2
+### Marco 3.4a — hot reload com inotify · P1 · Em andamento (JOY-034a)
 
-Objetivo: preparar o runtime para ser controlado sem reiniciar.
+Objetivo: recarregar a configuração automaticamente quando o usuário editar o YAML, sem reiniciar o serviço nem interromper a operação.
 
 Entregas:
 
-- reload atômico do YAML;
-- rollback quando a nova configuração é inválida;
-- troca explícita entre perfis;
-- comando/control channel para status, reload e seleção de perfil.
+- watch via `inotify` do kernel (fd no mesmo `select` do loop evdev, custo zero);
+- debounce para padrões de salvamento de editores (vim: tempfile + rename; nano/gedit: write direto);
+- validação completa do novo YAML antes de aplicar;
+- rollback atômico preservando a configuração anterior em erro;
+- liberação apenas de holds cujo mapeamento foi removido ou alterado;
+- preservação de estado contínuo (analógico, boost) entre reloads;
+- log em `stderr`/journal com resultado: arquivo detectado, validação ok/falha.
 
-O canal de controle deve ser definido antes do serviço e do tray. Avaliar socket Unix ou D-Bus de sessão; não acoplar a interface diretamente ao processo de captura.
+Critérios de aceite:
 
-### Marco 4 — serviço de usuário · P2
+- editar e salvar `config.yaml` aplica as mudanças em < 1 segundo;
+- YAML inválido emite erro e preserva o perfil anterior em execução;
+- nenhuma tecla ou clique fica preso durante o reload;
+- remoção de um botão no YAML libera o hold correspondente;
+- alteração de `mouse.stick` recalcula o analógico ativo imediatamente;
+- remoção de `mouse` ou `scroll` do YAML desabilita a funcionalidade;
+- custo ocioso permanece idêntico ao baseline (fd extra em `select`).
+
+Fora do escopo: múltiplos perfis, troca por comando, notificação visual e canal de controle.
+
+### Marco 3.4b — múltiplos perfis e canal de controle · P1/P2 (JOY-034b)
+
+Objetivo: trocar entre perfis nomeados e expor comandos de controle.
+
+Entregas:
+
+- diretório de perfis em XDG;
+- troca explícita entre perfis via comando;
+- canal de controle (socket Unix ou D-Bus de sessão) para reload e status.
+
+O canal de controle deve ser definido antes do tray. Avaliar socket Unix ou D-Bus de sessão; não acoplar a interface diretamente ao processo de captura.
+
+### Marco 4 — serviço de usuário · P2 · ✅ Concluído (JOY-040)
 
 Objetivo: executar o JoyIO automaticamente na sessão do usuário.
 
-Entregas:
+Entregas concluídas:
 
-- unidade `systemd --user`;
-- localização padrão de configuração em XDG;
-- logs no journal;
-- shutdown limpo e política de restart;
-- instalação, atualização e remoção reproduzíveis.
-
-Preferir serviço de usuário enquanto Bluetooth, sessão gráfica e permissões `uaccess` dependerem do usuário logado.
+- unidade `systemd --user` (`joyio service install|uninstall|status`);
+- localização padrão de configuração em `$XDG_CONFIG_HOME/joyio/config.yaml`;
+- logs no journal com `SyslogIdentifier=joyio`;
+- shutdown limpo via `SIGTERM` → `KeyboardInterrupt`;
+- `Restart=on-failure` (reconexão interna não causa restart);
+- `KillSignal=SIGTERM` + `TimeoutStopSec=5`.
 
 ### Marco 5 — ícone de bandeja · P2
 

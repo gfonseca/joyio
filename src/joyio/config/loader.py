@@ -11,6 +11,7 @@ import yaml
 
 from joyio.config.models import (
     ButtonMapping,
+    BoostMapping,
     DeviceConfig,
     JoyIOConfig,
     KeyChordMapping,
@@ -224,12 +225,17 @@ def _button_mapping(value: Any, path: str) -> ButtonMapping:
     data = _mapping(value, path)
     action_type = _enum(
         data.get("type"),
-        {"key", "key_chord", "mouse_button", "toggle"},
+        {"key", "key_chord", "mouse_button", "toggle", "boost"},
         f"{path}.type",
     )
     if action_type == "toggle":
         _only(data, {"type"}, path)
         return ToggleMapping()
+    if action_type == "boost":
+        _only(data, {"type", "factor"}, path)
+        return BoostMapping(
+            factor=_number(data.get("factor", 2.0), f"{path}.factor", 1.0, 8.0)
+        )
     mode = _enum(data.get("mode", "hold"), {"tap", "hold"}, f"{path}.mode")
     if action_type == "key":
         _only(data, {"type", "key", "mode"}, path)

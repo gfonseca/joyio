@@ -36,7 +36,15 @@ class ToggleMapping:
     type: Literal["toggle"] = "toggle"
 
 
-ButtonMapping = KeyMapping | KeyChordMapping | MouseButtonMapping | ToggleMapping
+@dataclass(frozen=True, slots=True)
+class BoostMapping:
+    factor: float
+    type: Literal["boost"] = "boost"
+
+
+ButtonMapping = (
+    KeyMapping | KeyChordMapping | MouseButtonMapping | ToggleMapping | BoostMapping
+)
 
 
 @dataclass(frozen=True, slots=True)

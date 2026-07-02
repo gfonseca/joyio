@@ -56,6 +56,13 @@ class DeviceStatusEvent:
     path: str
 
 
+@dataclass(frozen=True, slots=True)
+class ConfigFileChanged:
+    """Sentinel emitted when inotify detects a write on the watched config file."""
+
+    path: str
+
+
 @lru_cache(maxsize=None)
 def event_code_name(event_type: int, code: int) -> str:
     names: Any = ecodes.bytype.get(event_type, {}).get(code)

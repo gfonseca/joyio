@@ -13,6 +13,7 @@ from pathlib import Path
 
 from joyio.config import load_config
 from joyio.config.models import (
+    BoostMapping,
     KeyChordMapping,
     KeyMapping,
     MouseButtonMapping,
@@ -64,6 +65,17 @@ def test_complete_profile_maps_every_control_through_dry_run() -> None:
     for control_id, mapping in sorted(config.buttons.items()):
         side, control = control_id.split(".", maxsplit=1)
         pressed = engine.process(event(side, control))
+        if isinstance(mapping, (ToggleMapping, BoostMapping)):
+            assert pressed == []
+            if isinstance(mapping, ToggleMapping):
+                assert engine.process(
+                    event(side, control, state="released", value=0.0)
+                ) == []
+                continue
+            assert engine.process(
+                event(side, control, state="released", value=0.0)
+            ) == []
+            continue
         assert pressed, f"{control_id} não produziu ação ao pressionar"
         if isinstance(mapping, ToggleMapping):
             assert pressed == [ToggleAction()]

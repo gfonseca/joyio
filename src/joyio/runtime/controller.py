@@ -3,14 +3,49 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
+import sys
 import time
 
+from joyio.config import ConfigError, load_config
 from joyio.controls import JoyConSide
 from joyio.devices import JoyConInput, read_managed_events, read_runtime_events
-from joyio.events import DeviceStatusEvent
+from joyio.events import ConfigFileChanged, DeviceStatusEvent
 from joyio.mapping.actions import ToggleAction
 from joyio.mapping.engine import MappingEngine
 from joyio.output.backends import OutputBackend
+
+
+def _reload_config(
+    path: str,
+    engine: MappingEngine,
+    output: OutputBackend,
+    watcher: object | None = None,
+    now: float = 0.0,
+) -> None:
+    """Attempt atomic config reload; log result to stderr.
+
+    *watcher* is a ConfigWatcher (or any object with ``debounce(now)``).
+    When provided, reloads are gated on both filename-match (consume) and
+    debounce timing.
+    """
+    if watcher is not None:
+        # consume() reads inotify events and returns True only when our
+        # filename is among them (filters out unrelated directory noise).
+        if hasattr(watcher, "consume"):
+            if not watcher.consume():  # type: ignore[union-attr]
+                return
+        if hasattr(watcher, "debounce"):
+            if not watcher.debounce(now):  # type: ignore[union-attr]
+                return
+    try:
+        new_config = load_config(path)
+    except ConfigError as error:
+        print(f"  config: erro ao recarregar — {error}", file=sys.stderr)
+        return
+    actions = engine.reload(new_config)
+    if actions:
+        output.emit(actions)
+    print(f"  config: recarregada — {path}", file=sys.stderr)
 
 
 def run_mapping(
@@ -21,12 +56,23 @@ def run_mapping(
     on_mode_change: Callable[[bool], None] | None = None,
     clock: Callable[[], float] = time.monotonic,
     tick_interval: float = 1.0 / 120.0,
+    config_fd: int | None = None,
+    config_path: str = "",
+    config_watcher: object | None = None,
 ) -> None:
     """Run until interrupted or disconnected, always releasing held outputs."""
 
     try:
         next_tick = clock()
-        for event in read_runtime_events(inputs, tick_interval=tick_interval):
+        for event in read_runtime_events(
+            inputs,
+            tick_interval=tick_interval,
+            config_fd=config_fd,
+            config_path=config_path,
+        ):
+            if isinstance(event, ConfigFileChanged):
+                _reload_config(event.path, engine, output, config_watcher, clock())
+                continue
             if event is not None:
                 actions = engine.process(event)
                 output_actions = []
@@ -66,6 +112,9 @@ def run_managed_mapping(
     clock: Callable[[], float] = time.monotonic,
     tick_interval: float = 1.0 / 120.0,
     maintenance_interval: float = 0.1,
+    config_fd: int | None = None,
+    config_path: str = "",
+    config_watcher: object | None = None,
 ) -> None:
     """Keep one output session while Joy-Con sides come and go independently."""
 
@@ -73,8 +122,16 @@ def run_managed_mapping(
     try:
         next_tick = clock()
         next_maintenance = next_tick
-        for event in read_managed_events(addresses, tick_interval=tick_interval):
+        for event in read_managed_events(
+            addresses,
+            tick_interval=tick_interval,
+            config_fd=config_fd,
+            config_path=config_path,
+        ):
             now = clock()
+            if isinstance(event, ConfigFileChanged):
+                _reload_config(event.path, engine, output, config_watcher, now)
+                continue
             if isinstance(event, DeviceStatusEvent):
                 if event.state == "connected":
                     active_sides.add(event.side)
