@@ -2,16 +2,15 @@
 
 from __future__ import annotations
 
-from contextlib import suppress
 from dataclasses import dataclass
 import select
 import time
-from typing import Iterator, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 
-from evdev import InputDevice, InputEvent, ecodes, list_devices
+from evdev import AbsInfo, InputDevice, InputEvent, ecodes, list_devices
 
 from joyio.controls import JoyConSide
-from joyio.events import NormalizedEvent, normalize_event
+from joyio.events import DeviceStatusEvent, NormalizedEvent, normalize_event
 
 
 NINTENDO_VENDOR_ID = 0x057E
@@ -31,6 +30,17 @@ class JoyConInput:
     name: str
     address: str
     side: JoyConSide
+
+
+def _cached_absinfo(
+    device: InputDevice, cache: dict[int, AbsInfo | None], code: int
+) -> AbsInfo | None:
+    if code not in cache:
+        try:
+            cache[code] = device.absinfo(code)
+        except OSError:
+            cache[code] = None
+    return cache[code]
 
 
 def _is_joycon(device: InputDevice) -> bool:
@@ -111,11 +121,11 @@ def read_normalized_events(
         raise InputDeviceError(f"não foi possível abrir {device_path}: {error}") from error
 
     try:
+        absinfo_cache: dict[int, AbsInfo | None] = {}
         for event in device.read_loop():
             absinfo = None
             if event.type == ecodes.EV_ABS:
-                with suppress(OSError):
-                    absinfo = device.absinfo(event.code)
+                absinfo = _cached_absinfo(device, absinfo_cache, event.code)
             normalized = normalize_event(event, side=side, absinfo=absinfo)
             if normalized is not None:
                 yield normalized
@@ -135,6 +145,7 @@ def read_runtime_events(
     """Multiplex Joy-Con inputs and yield normalized events plus periodic ticks."""
 
     opened: dict[int, tuple[InputDevice, JoyConInput]] = {}
+    absinfo_caches: dict[int, dict[int, AbsInfo | None]] = {}
     try:
         for source in inputs:
             try:
@@ -144,9 +155,11 @@ def read_runtime_events(
                     f"não foi possível abrir {source.path}: {error}"
                 ) from error
             opened[device.fd] = (device, source)
+            absinfo_caches[device.fd] = {}
 
+        file_descriptors = tuple(opened)
         while True:
-            readable, _, _ = select.select(list(opened), [], [], tick_interval)
+            readable, _, _ = select.select(file_descriptors, [], [], tick_interval)
             if not readable:
                 yield None
                 continue
@@ -156,8 +169,9 @@ def read_runtime_events(
                 for event in device.read():
                     absinfo = None
                     if event.type == ecodes.EV_ABS:
-                        with suppress(OSError):
-                            absinfo = device.absinfo(event.code)
+                        absinfo = _cached_absinfo(
+                            device, absinfo_caches[fd], event.code
+                        )
                     normalized = normalize_event(
                         event, side=source.side, absinfo=absinfo
                     )
@@ -173,4 +187,122 @@ def read_runtime_events(
         ) from error
     finally:
         for device, _ in opened.values():
+            device.close()
+
+
+Discovery = Callable[[], list[JoyConInput]]
+
+
+def read_managed_events(
+    expected_addresses: Mapping[JoyConSide, str],
+    *,
+    tick_interval: float = 1.0 / 120.0,
+    discovery_interval: float = 0.5,
+    discover: Discovery = list_joycon_inputs,
+    clock: Callable[[], float] = time.monotonic,
+) -> Iterator[NormalizedEvent | DeviceStatusEvent | None]:
+    """Read nodes dynamically so either Joy-Con can disappear and return."""
+
+    opened: dict[
+        JoyConSide, tuple[InputDevice, JoyConInput, dict[int, AbsInfo | None]]
+    ] = {}
+    next_discovery = 0.0
+
+    def detach(side: JoyConSide) -> DeviceStatusEvent:
+        device, source, _ = opened.pop(side)
+        device.close()
+        return DeviceStatusEvent(side, "disconnected", source.path)
+
+    try:
+        while True:
+            now = clock()
+            missing = tuple(side for side in expected_addresses if side not in opened)
+            if missing and now >= next_discovery:
+                candidates = discover()
+                for side in missing:
+                    address = expected_addresses[side].upper()
+                    matches = [
+                        item
+                        for item in candidates
+                        if item.side == side
+                        and (not item.address or item.address.upper() == address)
+                    ]
+                    if len(matches) != 1:
+                        continue
+                    source = matches[0]
+                    try:
+                        device = InputDevice(source.path)
+                    except (FileNotFoundError, PermissionError, OSError):
+                        # The node may vanish between discovery and open. The next
+                        # short discovery pass will retry only this side.
+                        continue
+                    opened[side] = (device, source, {})
+                    yield DeviceStatusEvent(side, "connected", source.path)
+                next_discovery = clock() + discovery_interval
+
+            now = clock()
+            timeout = tick_interval
+            if any(side not in opened for side in expected_addresses):
+                timeout = min(timeout, max(0.0, next_discovery - now))
+            by_fd = {
+                device.fd: (side, device, source, cache)
+                for side, (device, source, cache) in opened.items()
+            }
+            try:
+                readable, _, _ = select.select(tuple(by_fd), [], [], timeout)
+            except (OSError, ValueError):
+                # A concurrently removed fd can make the grouped select fail.
+                # Probe each descriptor separately and detach only invalid ones.
+                readable = []
+                invalid_sides: list[JoyConSide] = []
+                for fd, (side, _, _, _) in by_fd.items():
+                    try:
+                        ready, _, _ = select.select((fd,), [], [], 0.0)
+                        readable.extend(ready)
+                    except (OSError, ValueError):
+                        invalid_sides.append(side)
+                for side in invalid_sides:
+                    if side in opened:
+                        yield detach(side)
+                        next_discovery = 0.0
+            if not readable:
+                yield None
+                continue
+
+            yielded = False
+            for fd in readable:
+                entry = by_fd.get(fd)
+                if entry is None:
+                    continue
+                side, device, source, cache = entry
+                try:
+                    events = device.read()
+                except BlockingIOError:
+                    continue
+                except OSError:
+                    if side in opened:
+                        yielded = True
+                        yield detach(side)
+                        next_discovery = 0.0
+                    continue
+                try:
+                    for event in events:
+                        absinfo = None
+                        if event.type == ecodes.EV_ABS:
+                            absinfo = _cached_absinfo(device, cache, event.code)
+                        normalized = normalize_event(
+                            event, side=source.side, absinfo=absinfo
+                        )
+                        if normalized is not None:
+                            yielded = True
+                            yield normalized
+                except OSError:
+                    if side in opened:
+                        yielded = True
+                        yield detach(side)
+                        next_discovery = 0.0
+            if not yielded:
+                yield None
+    finally:
+        for device, _, _ in opened.values():
             device.close()

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 import json
 from typing import Literal
 
@@ -35,8 +35,27 @@ class MouseScrollAction:
     type: Literal["mouse_scroll"] = "mouse_scroll"
 
 
+@dataclass(frozen=True, slots=True)
+class ToggleAction:
+    type: Literal["toggle"] = "toggle"
+
+
 OutputAction = KeyAction | MouseButtonAction | MouseMoveAction | MouseScrollAction
+ControlAction = ToggleAction
+MappingAction = OutputAction | ControlAction
 
 
 def action_json(action: OutputAction) -> str:
-    return json.dumps(asdict(action), ensure_ascii=False, sort_keys=True)
+    if isinstance(action, KeyAction):
+        data = {"key": action.key, "pressed": action.pressed, "type": action.type}
+    elif isinstance(action, MouseButtonAction):
+        data = {
+            "button": action.button,
+            "pressed": action.pressed,
+            "type": action.type,
+        }
+    else:
+        data = {"dx": action.dx, "dy": action.dy, "type": action.type}
+    return json.dumps(
+        data, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+    )

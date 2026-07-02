@@ -1,5 +1,7 @@
 # Prompt de desenvolvimento — JoyIO
 
+> **Documento histórico:** este prompt originou o projeto e descreve o estado inicial. Para continuar o desenvolvimento atual, use [GESTAO_PROJETO.md](GESTAO_PROJETO.md), [PROMPTS_ROADMAP.md](PROMPTS_ROADMAP.md) e [agents.md](../../agents.md). Em caso de divergência, os documentos atuais têm precedência.
+
 Use o texto abaixo como prompt para planejar e implementar o projeto.
 
 ---

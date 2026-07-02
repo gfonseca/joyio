@@ -32,13 +32,13 @@ class OutputError(RuntimeError):
 class DryRunOutput:
     def __init__(self, stream: TextIO | None = None) -> None:
         self.stream = stream or sys.stdout
-        self._pressed_keys: set[str] = set()
-        self._pressed_buttons: set[str] = set()
+        self._pressed_keys: dict[str, int] = {}
+        self._pressed_buttons: dict[str, int] = {}
 
     def emit(self, actions: Iterable[OutputAction]) -> None:
         for action in actions:
-            print(action_json(action), file=self.stream, flush=True)
-            self._track(action)
+            if self._track(action):
+                print(action_json(action), file=self.stream, flush=True)
 
     def release_all(self) -> None:
         actions: list[OutputAction] = [
@@ -48,22 +48,37 @@ class DryRunOutput:
             MouseButtonAction(button, False)
             for button in sorted(self._pressed_buttons)
         )
+        # One virtual release is sufficient regardless of how many physical
+        # mappings currently reference the same output.
+        self._pressed_keys = {key: 1 for key in self._pressed_keys}
+        self._pressed_buttons = {button: 1 for button in self._pressed_buttons}
         self.emit(actions)
 
     def close(self) -> None:
         return None
 
-    def _track(self, action: OutputAction) -> None:
+    def _track(self, action: OutputAction) -> bool:
         if isinstance(action, KeyAction):
-            update = self._pressed_keys.add if action.pressed else self._pressed_keys.discard
-            update(action.key)
+            return self._update_count(self._pressed_keys, action.key, action.pressed)
         elif isinstance(action, MouseButtonAction):
-            update = (
-                self._pressed_buttons.add
-                if action.pressed
-                else self._pressed_buttons.discard
+            return self._update_count(
+                self._pressed_buttons, action.button, action.pressed
             )
-            update(action.button)
+        return True
+
+    @staticmethod
+    def _update_count(state: dict[str, int], name: str, pressed: bool) -> bool:
+        count = state.get(name, 0)
+        if pressed:
+            state[name] = count + 1
+            return count == 0
+        elif count > 1:
+            state[name] = count - 1
+            return False
+        elif count:
+            del state[name]
+            return True
+        return False
 
 
 class UInputOutput:
@@ -75,11 +90,17 @@ class UInputOutput:
 
     def __init__(self, config: JoyIOConfig) -> None:
         keys: set[int] = set(self._MOUSE_CODES.values())
+        self._key_codes: dict[str, int] = {}
         for mapping in config.buttons.values():
             if isinstance(mapping, KeyMapping):
-                keys.add(getattr(ecodes, mapping.key))
+                code = getattr(ecodes, mapping.key)
+                keys.add(code)
+                self._key_codes[mapping.key] = code
             elif isinstance(mapping, KeyChordMapping):
-                keys.update(getattr(ecodes, key) for key in mapping.keys)
+                for key in mapping.keys:
+                    code = getattr(ecodes, key)
+                    keys.add(code)
+                    self._key_codes[key] = code
         capabilities = {
             ecodes.EV_KEY: sorted(keys),
             ecodes.EV_REL: [
@@ -90,7 +111,11 @@ class UInputOutput:
             ],
         }
         try:
-            self._device = UInput(capabilities, name="JoyIO Virtual Keyboard and Mouse")
+            self._device = UInput(
+                capabilities,
+                name="JoyIO Virtual Keyboard and Mouse",
+                max_effects=0,
+            )
         except (FileNotFoundError, PermissionError, OSError) as error:
             raise OutputError(f"não foi possível criar dispositivo uinput: {error}") from error
         self._pressed_keys: dict[int, int] = {}
@@ -98,25 +123,36 @@ class UInputOutput:
 
     def emit(self, actions: Iterable[OutputAction]) -> None:
         try:
+            relative_pending = False
             for action in actions:
                 if isinstance(action, KeyAction):
-                    code = getattr(ecodes, action.key)
+                    if relative_pending:
+                        self._device.syn()
+                        relative_pending = False
+                    code = self._key_codes[action.key]
                     self._write_key(code, action.pressed, self._pressed_keys)
                 elif isinstance(action, MouseButtonAction):
+                    if relative_pending:
+                        self._device.syn()
+                        relative_pending = False
                     code = self._MOUSE_CODES[action.button]
                     self._write_key(code, action.pressed, self._pressed_buttons)
                 elif isinstance(action, MouseMoveAction):
                     if action.dx:
                         self._device.write(ecodes.EV_REL, ecodes.REL_X, action.dx)
+                        relative_pending = True
                     if action.dy:
                         self._device.write(ecodes.EV_REL, ecodes.REL_Y, action.dy)
-                    self._device.syn()
+                        relative_pending = True
                 elif isinstance(action, MouseScrollAction):
                     if action.dx:
                         self._device.write(ecodes.EV_REL, ecodes.REL_HWHEEL, action.dx)
+                        relative_pending = True
                     if action.dy:
                         self._device.write(ecodes.EV_REL, ecodes.REL_WHEEL, action.dy)
-                    self._device.syn()
+                        relative_pending = True
+            if relative_pending:
+                self._device.syn()
         except OSError as error:
             raise OutputError(f"falha ao escrever no dispositivo uinput: {error}") from error
 

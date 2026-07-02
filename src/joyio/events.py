@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
+from functools import lru_cache
 import json
-from typing import Any
+from typing import Any, Literal
 
 from evdev import AbsInfo, InputEvent, ecodes
 
 from joyio.controls import JoyConSide, canonical_control
+
+
+_BUTTON_STATES = {0: "released", 1: "pressed", 2: "repeat"}
+_GAMEPAD_DIRECTIONS = frozenset(
+    {"BTN_SOUTH", "BTN_EAST", "BTN_NORTH", "BTN_WEST"}
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,17 +30,40 @@ class NormalizedEvent:
     timestamp: float
 
     def to_json(self) -> str:
-        return json.dumps(asdict(self), ensure_ascii=False, sort_keys=True)
+        return json.dumps(
+            {
+                "code": self.code,
+                "control": self.control,
+                "kind": self.kind,
+                "side": self.side,
+                "source_control": self.source_control,
+                "state": self.state,
+                "timestamp": self.timestamp,
+                "value": self.value,
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
 
 
+@dataclass(frozen=True, slots=True)
+class DeviceStatusEvent:
+    """Report one Joy-Con evdev node entering or leaving the runtime."""
+
+    side: JoyConSide
+    state: Literal["connected", "disconnected"]
+    path: str
+
+
+@lru_cache(maxsize=None)
 def event_code_name(event_type: int, code: int) -> str:
     names: Any = ecodes.bytype.get(event_type, {}).get(code)
     if names is None:
         return f"UNKNOWN_{code}"
     if isinstance(names, tuple):
-        gamepad_directions = {"BTN_SOUTH", "BTN_EAST", "BTN_NORTH", "BTN_WEST"}
         for name in names:
-            if name in gamepad_directions:
+            if name in _GAMEPAD_DIRECTIONS:
                 return str(name)
         return str(names[-1])
     return str(names)
@@ -68,7 +98,6 @@ def normalize_event(
     if control is None:
         control = f"unmapped:{source_control.casefold()}"
     if event.type == ecodes.EV_KEY:
-        states = {0: "released", 1: "pressed", 2: "repeat"}
         return NormalizedEvent(
             kind="button",
             control=control,
@@ -76,7 +105,7 @@ def normalize_event(
             side=side,
             code=event.code,
             value=float(event.value),
-            state=states.get(event.value, "unknown"),
+            state=_BUTTON_STATES.get(event.value, "unknown"),
             timestamp=event.timestamp(),
         )
     if event.type == ecodes.EV_ABS and absinfo is not None:

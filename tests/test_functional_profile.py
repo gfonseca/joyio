@@ -12,11 +12,16 @@ import json
 from pathlib import Path
 
 from joyio.config import load_config
-from joyio.config.models import KeyChordMapping, KeyMapping, MouseButtonMapping
+from joyio.config.models import (
+    KeyChordMapping,
+    KeyMapping,
+    MouseButtonMapping,
+    ToggleMapping,
+)
 from joyio.controls import BUTTON_CONTROLS
 from joyio.events import NormalizedEvent
 from joyio.mapping import MappingEngine
-from joyio.mapping.actions import MouseMoveAction, MouseScrollAction
+from joyio.mapping.actions import MouseMoveAction, MouseScrollAction, ToggleAction
 from joyio.output import DryRunOutput
 
 
@@ -60,6 +65,18 @@ def test_complete_profile_maps_every_control_through_dry_run() -> None:
         side, control = control_id.split(".", maxsplit=1)
         pressed = engine.process(event(side, control))
         assert pressed, f"{control_id} não produziu ação ao pressionar"
+        if isinstance(mapping, ToggleMapping):
+            assert pressed == [ToggleAction()]
+            assert engine.set_enabled(False) == []
+            assert engine.enabled is False
+            assert (
+                engine.process(
+                    event(side, control, state="released", value=0.0)
+                )
+                == []
+            )
+            engine.set_enabled(True)
+            continue
         output.emit(pressed)
 
         released = engine.process(

@@ -5,7 +5,7 @@ Este arquivo resume o estado atual do repo e as decisoes que ja foram tomadas, p
 ## Estado atual
 
 - Projeto em Python para Linux ARM64/aarch64.
-- Fase atual: Fase 2, mapeamento e saida virtual.
+- Fase atual: Fase 3, robustez e reconexao em foreground.
 - A CLI funciona com `joyio list`, `joyio inspect`, `joyio validate-config` e `joyio run`.
 - O fluxo atual e:
   - BlueZ conecta o Joy-Con;
@@ -13,7 +13,7 @@ Este arquivo resume o estado atual do repo e as decisoes que ja foram tomadas, p
   - o projeto le `event*` via `python-evdev`;
   - os eventos sao normalizados para nomes canonicamente estaveis do JoyIO;
   - `inspect` imprime JSONL puro em `stdout` e diagnosticos em `stderr`.
-  - `run` conecta um Joy-Con L e um R, multiplexa os dois e produz acoes de teclado/mouse;
+  - `run` coordena L e R no mesmo controle logico, com ciclo de vida independente por lado;
   - `--dry-run` imprime as acoes em JSONL; sem ele, a saida usa `uinput`.
 - O ambiente de desenvolvimento usa `.venv`; o projeto deve continuar sendo instalado e executado por esse ambiente virtual.
 
@@ -64,21 +64,31 @@ Este arquivo resume o estado atual do repo e as decisoes que ja foram tomadas, p
 - Testes automatizados cobrem lista, inspecao, mapeamento canonico, desconexao e separacao `stdout`/`stderr`.
 - Existe regra udev restrita em `config/udev/70-joyio.rules`.
 - Existe ADR registrando a decisao `hid_nintendo` + `evdev`.
-- A suite da Fase 2 possui 50 testes sem dependencia de hardware.
+- A suite possui 67 testes sem dependencia de hardware.
 - `tests/test_functional_profile.py` atravessa YAML, mapping e dry-run para todos os 22 botoes, mouse e scroll horizontal/vertical.
+- `PERFORMANCE.md` registra benchmarks ARM64, parametros evdev reais e decisoes do caminho critico.
 
 ## Arquivos que valem leitura antes de mexer no codigo
 
 - `README.md`
-- `FASE_0.md`
-- `FASE_1.md`
-- `FASE_2.md`
+- `docs/project/FASE_0.md`
+- `docs/project/FASE_1.md`
+- `docs/project/FASE_2.md`
+- `docs/project/FASE_3.md`
+- `docs/project/README.md`
+- `docs/project/GESTAO_PROJETO.md`
+- `docs/project/PROMPTS_ROADMAP.md`
+- `docs/project/Melhorias.md`
 - `docs/adr/0001-usar-hid-nintendo-e-evdev.md`
 - `src/joyio/cli.py`
 - `src/joyio/bluetooth.py`
 - `src/joyio/devices.py`
 - `src/joyio/controls.py`
 - `src/joyio/events.py`
+
+O `README.md` e intencionalmente uma pagina de apresentacao e manual do usuario. Detalhes de arquitetura, fases e benchmarks devem permanecer nos documentos tecnicos vinculados ao final dele.
+
+O backlog ativo e sua ordem ficam em `docs/project/Melhorias.md` e `docs/project/GESTAO_PROJETO.md`. Use um prompt de `docs/project/PROMPTS_ROADMAP.md` por vez e mantenha limite de uma tarefa em andamento.
 
 ## Comandos uteis
 
@@ -108,10 +118,17 @@ python3 -m venv .venv
 - liberacao de entradas presas no encerramento/falha;
 - multiplexacao simultanea dos Joy-Cons L/R e selecao obrigatoria de um controle de cada lado;
 
-### Fase 3 ainda nao implementada
+### Fase 3 em andamento
 
-- reconexao com backoff;
-- selecao automatica deterministica;
+- reconexao independente por lado com backoff e limite opcional implementada;
+- o runtime preserva o `uinput`, o mapping e o leitor do lado que continua ativo;
+- leitores `evdev` entram e saem dinamicamente, inclusive se o caminho `event*` mudar;
+- a desconexao libera apenas holds e movimento analogico originados naquele lado;
+- `bluetoothctl connect` roda sem bloquear o loop de entrada e `InProgress` e tratado como pendente;
+- `--no-reconnect` permite diagnostico de sessao unica;
+- prova real no Joy-Con R detectou `ENODEV` e retomou de `event10` para `event8` sem reiniciar o processo;
+- controles com `WakeAllowed: no` podem exigir um botao fisico para acordar antes da reconexao;
+- prova fisica independente nos dois lados, hot reload e servico ainda pendentes;
 - metricas/logging estruturado;
 - testes prolongados e empacotamento reproduzivel.
 

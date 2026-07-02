@@ -31,13 +31,32 @@ class MouseButtonMapping:
     type: Literal["mouse_button"] = "mouse_button"
 
 
-ButtonMapping = KeyMapping | KeyChordMapping | MouseButtonMapping
+@dataclass(frozen=True, slots=True)
+class ToggleMapping:
+    type: Literal["toggle"] = "toggle"
+
+
+ButtonMapping = KeyMapping | KeyChordMapping | MouseButtonMapping | ToggleMapping
 
 
 @dataclass(frozen=True, slots=True)
 class DeviceConfig:
     left_address: str | None = None
     right_address: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ReconnectConfig:
+    enabled: bool = True
+    initial_delay: float = 1.0
+    max_delay: float = 30.0
+    multiplier: float = 2.0
+    max_attempts: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeConfig:
+    enabled: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,6 +85,8 @@ class ScrollConfig:
 class JoyIOConfig:
     version: Literal[1]
     device: DeviceConfig = field(default_factory=DeviceConfig)
+    reconnect: ReconnectConfig = field(default_factory=ReconnectConfig)
+    runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
     mouse: MouseConfig | None = None
     scroll: ScrollConfig | None = None
     buttons: dict[str, ButtonMapping] = field(default_factory=dict)

@@ -6,6 +6,16 @@ devices:
   right:
     address: null
 
+reconnect:
+  enabled: true
+  initial_delay: 1.0
+  max_delay: 30.0
+  multiplier: 2.0
+  max_attempts: null
+
+runtime:
+  enabled: true
+
 mouse:
   stick: left_stick
   dead_zone: 0.12
@@ -60,9 +70,7 @@ mappings:
         key: KEY_TAB
         mode: tap
       capture:
-        type: key
-        key: KEY_F12
-        mode: tap
+        type: toggle
       sl:
         type: key
         key: KEY_F5
@@ -106,7 +114,7 @@ mappings:
         mode: tap
       home:
         type: key
-        key: KEY_HOME
+        key: KEY_LEFTMETA
         mode: tap
       sl:
         type: key

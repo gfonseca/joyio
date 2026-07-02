@@ -53,7 +53,7 @@ class FakeUInput:
 def test_uinput_emits_keys_mouse_and_releases_holds(monkeypatch) -> None:
     created = []
 
-    def factory(capabilities, name):
+    def factory(capabilities, name, **kwargs):
         device = FakeUInput(capabilities, name)
         created.append(device)
         return device
@@ -88,7 +88,7 @@ def test_uinput_emits_keys_mouse_and_releases_holds(monkeypatch) -> None:
 def test_uinput_reference_counts_shared_outputs(monkeypatch) -> None:
     created = []
 
-    def factory(capabilities, name):
+    def factory(capabilities, name, **kwargs):
         device = FakeUInput(capabilities, name)
         created.append(device)
         return device
@@ -104,3 +104,34 @@ def test_uinput_reference_counts_shared_outputs(monkeypatch) -> None:
 
     output.emit([KeyAction("KEY_A", False)])
     assert created[0].writes[-1] == (ecodes.EV_KEY, ecodes.KEY_A, 0)
+
+
+def test_uinput_groups_pointer_and_scroll_in_one_sync(monkeypatch) -> None:
+    created = []
+
+    def factory(capabilities, name, **kwargs):
+        device = FakeUInput(capabilities, name)
+        created.append(device)
+        return device
+
+    monkeypatch.setattr(backends, "UInput", factory)
+    output = UInputOutput(JoyIOConfig(version=1))
+
+    output.emit([MouseMoveAction(3, -2), MouseScrollAction(1, -1)])
+
+    assert created[0].syncs == 1
+
+
+def test_dry_run_reference_counts_shared_outputs() -> None:
+    stream = StringIO()
+    output = DryRunOutput(stream)
+
+    output.emit([KeyAction("KEY_A", True), KeyAction("KEY_A", True)])
+    output.emit([KeyAction("KEY_A", False)])
+    output.emit([KeyAction("KEY_A", False)])
+
+    lines = [json.loads(line) for line in stream.getvalue().splitlines()]
+    assert lines == [
+        {"key": "KEY_A", "pressed": True, "type": "key"},
+        {"key": "KEY_A", "pressed": False, "type": "key"},
+    ]

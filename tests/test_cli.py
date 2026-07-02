@@ -91,21 +91,26 @@ def test_run_dry_run_wires_both_devices(monkeypatch, capsys) -> None:
             address="11:22:33:44:55:02", name="Joy-Con (R)", side="right"
         ),
     )
-    inputs = (
-        JoyConInput("/dev/input/left", "Joy-Con (L)", paired[0].address, "left"),
-        JoyConInput("/dev/input/right", "Joy-Con (R)", paired[1].address, "right"),
-    )
     called = []
     monkeypatch.setattr(cli, "list_paired_devices", lambda: list(paired))
-    monkeypatch.setattr(cli, "connect_device", lambda address: False)
-    by_address = {item.address: item for item in inputs}
-    monkeypatch.setattr(
-        cli, "wait_for_input", lambda address, timeout: by_address[address]
-    )
+
+    class FakeConnector:
+        def __init__(self, addresses, policy, **kwargs):
+            self.addresses = addresses
+
+        def maintain(self, active_sides):
+            return None
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(cli, "BluetoothConnector", FakeConnector)
     monkeypatch.setattr(
         cli,
-        "run_mapping",
-        lambda selected, engine, output: called.append((selected, output)),
+        "run_managed_mapping",
+        lambda addresses, engine, output, maintain, **kwargs: called.append(
+            (addresses, output)
+        ),
     )
 
     exit_code = cli.main(
@@ -119,7 +124,10 @@ def test_run_dry_run_wires_both_devices(monkeypatch, capsys) -> None:
 
     captured = capsys.readouterr()
     assert exit_code == 0
-    assert tuple(item.side for item in called[0][0]) == ("left", "right")
+    assert called[0][0] == {
+        "left": "11:22:33:44:55:01",
+        "right": "11:22:33:44:55:02",
+    }
     assert called[0][1].__class__.__name__ == "DryRunOutput"
     assert "dry-run" in captured.err
 

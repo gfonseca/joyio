@@ -7,6 +7,7 @@ from joyio.config.models import (
     MouseButtonMapping,
     MouseConfig,
     ScrollConfig,
+    ToggleMapping,
 )
 from joyio.events import NormalizedEvent
 from joyio.mapping.actions import (
@@ -14,7 +15,9 @@ from joyio.mapping.actions import (
     MouseButtonAction,
     MouseMoveAction,
     MouseScrollAction,
+    ToggleAction,
 )
+from joyio.mapping import engine as engine_module
 from joyio.mapping.engine import MappingEngine
 
 
@@ -166,3 +169,95 @@ def test_mouse_and_scroll_use_different_sticks_simultaneously() -> None:
         MouseMoveAction(5, 0),
         MouseScrollAction(0, 1),
     ]
+
+
+def test_analog_curve_is_recomputed_only_when_axis_changes(monkeypatch) -> None:
+    calls = 0
+    original_hypot = engine_module.math.hypot
+
+    def counting_hypot(x, y):
+        nonlocal calls
+        calls += 1
+        return original_hypot(x, y)
+
+    monkeypatch.setattr(engine_module.math, "hypot", counting_hypot)
+    engine = MappingEngine(
+        JoyIOConfig(
+            version=1,
+            mouse=MouseConfig(stick="left_stick"),
+        )
+    )
+    axis = event("left_stick_x", "", side="left", kind="axis", value=0.5)
+
+    engine.process(axis)
+    for tick in range(100):
+        engine.tick(tick / 120.0)
+    engine.process(axis)
+
+    assert calls == 1
+
+
+def test_release_side_releases_only_its_holds_and_stops_its_stick() -> None:
+    engine = MappingEngine(
+        JoyIOConfig(
+            version=1,
+            mouse=MouseConfig(
+                stick="left_stick",
+                dead_zone=0.0,
+                sensitivity=100.0,
+                acceleration=1.0,
+                max_speed=100.0,
+                invert_x=False,
+                invert_y=False,
+            ),
+            buttons={
+                "left.l": KeyMapping("KEY_A", "hold"),
+                "right.r": KeyMapping("KEY_B", "hold"),
+            },
+        )
+    )
+    engine.process(event("l", "pressed", side="left"))
+    engine.process(event("r", "pressed", side="right"))
+    engine.process(event("left_stick_x", "", side="left", kind="axis", value=1.0))
+    engine.tick(1.0)
+
+    assert engine.release_side("left") == [KeyAction("KEY_A", False)]
+    assert engine.tick(1.1) == []
+    assert engine.process(event("r", "released", side="right")) == [
+        KeyAction("KEY_B", False)
+    ]
+
+
+def test_toggle_mode_disables_and_reenables_output() -> None:
+    engine = MappingEngine(
+        JoyIOConfig(
+            version=1,
+            buttons={
+                "left.capture": ToggleMapping(),
+                "right.a": KeyMapping("KEY_A", "hold"),
+            },
+        )
+    )
+
+    assert engine.enabled is True
+    assert engine.process(event("capture", "pressed", side="left")) == [
+        ToggleAction()
+    ]
+    assert engine.enabled is True
+
+    assert engine.set_enabled(False) == []
+    assert engine.enabled is False
+    assert (
+        engine.process(
+            event("a", "pressed", side="right")
+        )
+        == []
+    )
+    assert engine.process(event("a", "released", side="right", value=0.0)) == []
+    assert engine.process(event("capture", "released", side="left")) == []
+    assert engine.process(event("capture", "pressed", side="left")) == [
+        ToggleAction()
+    ]
+    assert engine.set_enabled(True) == []
+    assert engine.enabled is True
+    assert engine.process(event("a", "pressed")) == [KeyAction("KEY_A", True)]

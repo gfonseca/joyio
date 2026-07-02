@@ -9,6 +9,7 @@ from typing import Sequence
 from joyio import __version__
 from joyio.bluetooth import (
     BluetoothDevice,
+    BluetoothConnector,
     BluetoothError,
     connect_device,
     list_paired_devices,
@@ -17,7 +18,7 @@ from joyio.config import ConfigError, JoyIOConfig, load_config
 from joyio.devices import InputDeviceError, read_normalized_events, wait_for_input
 from joyio.mapping import MappingEngine
 from joyio.output import DryRunOutput, OutputError, UInputOutput
-from joyio.runtime import run_mapping
+from joyio.runtime import run_managed_mapping, run_mapping
 
 
 EXIT_OK = 0
@@ -69,6 +70,11 @@ def _parser() -> argparse.ArgumentParser:
     )
     run.add_argument(
         "--timeout", type=float, default=8.0, help="espera pelo evdev em segundos"
+    )
+    run.add_argument(
+        "--no-reconnect",
+        action="store_true",
+        help="encerra na primeira falha de Bluetooth ou evdev",
     )
     return parser
 
@@ -174,6 +180,7 @@ def _run_command(
     right_selector: str | None,
     timeout: float,
     dry_run: bool,
+    no_reconnect: bool,
 ) -> int:
     config = load_config(path)
     selected = _select_pair(config, _paired_joycons(), left_selector, right_selector)
@@ -181,25 +188,76 @@ def _run_command(
         print(
             f"Joy-Con {device.side}: {device.name} [{device.address}]", file=sys.stderr
         )
-        changed = connect_device(device.address)
-        status = "Conexão Bluetooth solicitada." if changed else "Já conectado."
-        print(f"  {status}", file=sys.stderr)
-    inputs = tuple(
-        wait_for_input(device.address, timeout=timeout) for device in selected
-    )
-    output = DryRunOutput() if dry_run else UInputOutput(config)
     mode = "dry-run" if dry_run else "uinput"
-    paths = ", ".join(f"{item.side}={item.path}" for item in inputs)
-    print(
-        f"Executando par Joy-Con ({paths}) em {mode}; Ctrl+C encerra.",
-        file=sys.stderr,
-    )
     try:
-        run_mapping(
-            inputs,
-            MappingEngine(config),
-            output,
-        )
+        if no_reconnect or not config.reconnect.enabled:
+            for device in selected:
+                changed = connect_device(device.address)
+                status = "Conexão solicitada." if changed else "Já conectado."
+                print(f"  {device.side}: {status}", file=sys.stderr)
+            inputs = tuple(
+                wait_for_input(device.address, timeout=timeout) for device in selected
+            )
+            output = DryRunOutput() if dry_run else UInputOutput(config)
+            paths = ", ".join(f"{item.side}={item.path}" for item in inputs)
+            print(
+                f"Executando par Joy-Con ({paths}) em {mode}; Ctrl+C encerra.",
+                file=sys.stderr,
+            )
+            print(
+                f"  mapping: {'enabled' if config.runtime.enabled else 'disabled'}",
+                file=sys.stderr,
+            )
+
+            def report_mode(enabled: bool) -> None:
+                state = "enabled" if enabled else "disabled"
+                print(f"  mapping: {state}", file=sys.stderr)
+
+            run_mapping(
+                inputs,
+                MappingEngine(config),
+                output,
+                on_mode_change=report_mode,
+            )
+        else:
+            addresses = {device.side: device.address for device in selected}
+
+            def report_connection(side: str, state: str, detail: str) -> None:
+                print(f"  {side}: {state} — {detail}", file=sys.stderr)
+
+            def report_device(event) -> None:
+                state = "evdev_ready" if event.state == "connected" else "offline"
+                print(f"  {event.side}: {state} — {event.path}", file=sys.stderr)
+
+            connector = BluetoothConnector(
+                addresses,
+                config.reconnect,
+                timeout=timeout,
+                on_status=report_connection,
+            )
+            output = DryRunOutput() if dry_run else UInputOutput(config)
+            print(
+                f"Executando Joy-Cons independentes em {mode}; Ctrl+C encerra.",
+                file=sys.stderr,
+            )
+            print(
+                f"  mapping: {'enabled' if config.runtime.enabled else 'disabled'}",
+                file=sys.stderr,
+            )
+            try:
+                run_managed_mapping(
+                    addresses,
+                    MappingEngine(config),
+                    output,
+                    connector.maintain,
+                    on_device_status=report_device,
+                    on_mode_change=lambda enabled: print(
+                        f"  mapping: {'enabled' if enabled else 'disabled'}",
+                        file=sys.stderr,
+                    ),
+                )
+            finally:
+                connector.close()
     except KeyboardInterrupt:
         print("\nEncerramento solicitado; entradas liberadas.", file=sys.stderr)
     return EXIT_OK
@@ -221,6 +279,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 arguments.right_device,
                 arguments.timeout,
                 arguments.dry_run,
+                arguments.no_reconnect,
             )
     except ConfigError as error:
         print(f"Erro de configuração: {error}", file=sys.stderr)

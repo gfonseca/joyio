@@ -52,7 +52,7 @@ A cobertura inclui um teste funcional de todas as entradas do perfil, schema e e
 
 ## Fase 3
 
-- reconexão com backoff e retomada do loop;
+- reconexão com backoff e retomada do loop (entregue no primeiro incremento da Fase 3);
 - seleção automática determinística;
 - calibração/fallback explicitamente medidos;
 - logging estruturado e métricas operacionais;

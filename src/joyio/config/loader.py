@@ -17,9 +17,12 @@ from joyio.config.models import (
     KeyMapping,
     MouseButtonMapping,
     MouseConfig,
+    ReconnectConfig,
+    RuntimeConfig,
     ScrollConfig,
+    ToggleMapping,
 )
-from joyio.controls import AXIS_CONTROLS, BUTTON_CONTROLS
+from joyio.controls import BUTTON_CONTROLS
 
 
 class ConfigError(ValueError):
@@ -60,6 +63,16 @@ def _boolean(value: Any, path: str) -> bool:
     return value
 
 
+def _optional_integer(value: Any, path: str, minimum: int, maximum: int) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ConfigError(f"{path}: esperado número inteiro ou null")
+    if not minimum <= value <= maximum:
+        raise ConfigError(f"{path}: deve estar entre {minimum} e {maximum}, ou null")
+    return value
+
+
 def _enum(value: Any, choices: set[str], path: str) -> str:
     if not isinstance(value, str) or value not in choices:
         options = ", ".join(sorted(choices))
@@ -94,6 +107,44 @@ def _devices(root: Mapping[str, Any]) -> DeviceConfig:
         addresses[side] = _address(item.get("address"), f"devices.{side}.address")
     return DeviceConfig(
         left_address=addresses["left"], right_address=addresses["right"]
+    )
+
+
+def _reconnect(root: Mapping[str, Any]) -> ReconnectConfig:
+    data = _mapping(root.get("reconnect", {}), "reconnect")
+    _only(
+        data,
+        {"enabled", "initial_delay", "max_delay", "multiplier", "max_attempts"},
+        "reconnect",
+    )
+    initial_delay = _number(
+        data.get("initial_delay", 1.0), "reconnect.initial_delay", 0.1, 300.0
+    )
+    max_delay = _number(
+        data.get("max_delay", 30.0), "reconnect.max_delay", 0.1, 3600.0
+    )
+    if max_delay < initial_delay:
+        raise ConfigError(
+            "reconnect.max_delay: deve ser maior ou igual a reconnect.initial_delay"
+        )
+    return ReconnectConfig(
+        enabled=_boolean(data.get("enabled", True), "reconnect.enabled"),
+        initial_delay=initial_delay,
+        max_delay=max_delay,
+        multiplier=_number(
+            data.get("multiplier", 2.0), "reconnect.multiplier", 1.0, 10.0
+        ),
+        max_attempts=_optional_integer(
+            data.get("max_attempts"), "reconnect.max_attempts", 1, 1000
+        ),
+    )
+
+
+def _runtime(root: Mapping[str, Any]) -> RuntimeConfig:
+    data = _mapping(root.get("runtime", {}), "runtime")
+    _only(data, {"enabled"}, "runtime")
+    return RuntimeConfig(
+        enabled=_boolean(data.get("enabled", True), "runtime.enabled")
     )
 
 
@@ -172,8 +223,13 @@ def _scroll(root: Mapping[str, Any]) -> ScrollConfig | None:
 def _button_mapping(value: Any, path: str) -> ButtonMapping:
     data = _mapping(value, path)
     action_type = _enum(
-        data.get("type"), {"key", "key_chord", "mouse_button"}, f"{path}.type"
+        data.get("type"),
+        {"key", "key_chord", "mouse_button", "toggle"},
+        f"{path}.type",
     )
+    if action_type == "toggle":
+        _only(data, {"type"}, path)
+        return ToggleMapping()
     mode = _enum(data.get("mode", "hold"), {"tap", "hold"}, f"{path}.mode")
     if action_type == "key":
         _only(data, {"type", "key", "mode"}, path)
@@ -227,12 +283,26 @@ def load_config(path: str | Path) -> JoyIOConfig:
     except yaml.YAMLError as error:
         raise ConfigError(f"{config_path}: YAML inválido: {error}") from error
     root = _mapping(loaded, "config")
-    _only(root, {"version", "devices", "mouse", "scroll", "mappings"}, "config")
+    _only(
+        root,
+        {
+            "version",
+            "devices",
+            "reconnect",
+            "runtime",
+            "mouse",
+            "scroll",
+            "mappings",
+        },
+        "config",
+    )
     if root.get("version") != 1 or isinstance(root.get("version"), bool):
         raise ConfigError("version: somente a versão 1 é suportada")
     return JoyIOConfig(
         version=1,
         device=_devices(root),
+        reconnect=_reconnect(root),
+        runtime=_runtime(root),
         mouse=_mouse(root),
         scroll=_scroll(root),
         buttons=_buttons(root),

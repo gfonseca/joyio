@@ -66,7 +66,7 @@ Custos e riscos:
 - aumenta significativamente a superfície de testes;
 - o backend libusb do HIDAPI não atende Bluetooth; no Linux teria de ser usado o backend hidraw.
 
-Decisão detalhada: [ADR 0001](docs/adr/0001-usar-hid-nintendo-e-evdev.md).
+Decisão detalhada: [ADR 0001](../adr/0001-usar-hid-nintendo-e-evdev.md).
 
 ## Dependências
 

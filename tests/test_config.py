@@ -6,6 +6,7 @@ import pytest
 
 from joyio.config import ConfigError, load_config
 from joyio.config.models import KeyChordMapping, MouseButtonMapping
+from joyio.config.models import ToggleMapping
 from joyio.controls import BUTTON_CONTROLS
 
 
@@ -21,6 +22,12 @@ def test_loads_example_configuration() -> None:
     assert config.version == 1
     assert config.device.left_address is None
     assert config.device.right_address is None
+    assert config.reconnect.enabled is True
+    assert config.reconnect.initial_delay == 1.0
+    assert config.reconnect.max_delay == 30.0
+    assert config.reconnect.multiplier == 2.0
+    assert config.reconnect.max_attempts is None
+    assert config.runtime.enabled is True
     assert config.mouse is not None
     assert config.mouse.stick == "left_stick"
     assert config.scroll is not None
@@ -31,6 +38,7 @@ def test_loads_example_configuration() -> None:
     assert config.buttons["left.l"] == MouseButtonMapping("right", "hold")
     assert config.buttons["right.zr"] == MouseButtonMapping("right", "hold")
     assert config.buttons["right.r"] == MouseButtonMapping("left", "hold")
+    assert config.buttons["left.capture"] == ToggleMapping()
     assert "left.dpad_up" in config.buttons
     expected_buttons = {
         f"{side}.{control}"
@@ -58,6 +66,22 @@ def test_loads_example_configuration() -> None:
             "version: 1\n"
             "mappings: {buttons: {right: {dpad_up: {type: key, key: KEY_UP}}}}\n",
             "desconhecido para right",
+        ),
+        (
+            "version: 1\nreconnect: {initial_delay: 5, max_delay: 1}\n",
+            "reconnect.max_delay",
+        ),
+        (
+            "version: 1\nreconnect: {max_attempts: 0}\n",
+            "reconnect.max_attempts",
+        ),
+        (
+            "version: 1\nruntime: {enabled: maybe}\n",
+            "runtime.enabled",
+        ),
+        (
+            "version: 1\nmappings: {buttons: {left: {capture: {type: toggle, extra: true}}}}\n",
+            "mappings.buttons.left.capture.extra",
         ),
     ],
 )
