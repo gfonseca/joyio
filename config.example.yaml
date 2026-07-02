@@ -1,0 +1,118 @@
+version: 1
+
+devices:
+  left:
+    address: null
+  right:
+    address: null
+
+mouse:
+  stick: left_stick
+  dead_zone: 0.12
+  sensitivity: 600.0
+  acceleration: 1.3
+  max_speed: 1800.0
+  invert_x: false
+  invert_y: false
+
+scroll:
+  stick: right_stick
+  dead_zone: 0.18
+  sensitivity: 18.0
+  acceleration: 1.3
+  max_speed: 30.0
+  invert_x: false
+  invert_y: true
+
+mappings:
+  buttons:
+    left:
+      dpad_up:
+        type: key
+        key: KEY_UP
+        mode: hold
+      dpad_down:
+        type: key
+        key: KEY_DOWN
+        mode: hold
+      dpad_left:
+        type: key
+        key: KEY_LEFT
+        mode: hold
+      dpad_right:
+        type: key
+        key: KEY_RIGHT
+        mode: hold
+      left_stick_press:
+        type: key
+        key: KEY_SPACE
+        mode: tap
+      l:
+        type: mouse_button
+        button: right
+        mode: hold
+      zl:
+        type: mouse_button
+        button: left
+        mode: hold
+      minus:
+        type: key
+        key: KEY_TAB
+        mode: tap
+      capture:
+        type: key
+        key: KEY_F12
+        mode: tap
+      sl:
+        type: key
+        key: KEY_F5
+        mode: tap
+      sr:
+        type: key
+        key: KEY_F6
+        mode: tap
+    right:
+      a:
+        type: mouse_button
+        button: right
+        mode: hold
+      zr:
+        type: mouse_button
+        button: right
+        mode: hold
+      b:
+        type: key
+        key: KEY_ESC
+        mode: tap
+      x:
+        type: key_chord
+        keys: [KEY_LEFTCTRL, KEY_C]
+        mode: tap
+      y:
+        type: key_chord
+        keys: [KEY_LEFTCTRL, KEY_V]
+        mode: tap
+      r:
+        type: mouse_button
+        button: left
+        mode: hold
+      plus:
+        type: key
+        key: KEY_ENTER
+        mode: tap
+      right_stick_press:
+        type: mouse_button
+        button: middle
+        mode: tap
+      home:
+        type: key
+        key: KEY_HOME
+        mode: tap
+      sl:
+        type: key
+        key: KEY_F7
+        mode: tap
+      sr:
+        type: key
+        key: KEY_F8
+        mode: tap

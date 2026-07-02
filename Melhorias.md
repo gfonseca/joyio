@@ -1,0 +1,5 @@
+- Pointer boost: um botão que acelera o ponteiro do mouse para navegar mais rapido por telas grandes
+- Combos de teclas
+- Mouse scroll vertical e horizontal no analógico
+- Ativar ou desativar: permitir que um comando de botoes desativem / ative o mapeamento para permitir que os controles funcionem normalmente com jogos nativamente
+- tray icon que mostre status dos controles / abra arquivo de config no editor padrão do sistema, mostre janela de logs / On /Off etc pense em mais ideias para esse icone

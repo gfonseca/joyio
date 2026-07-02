@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from joyio import cli
 from joyio.bluetooth import BluetoothDevice
@@ -62,3 +63,79 @@ def test_inspect_keeps_stdout_as_jsonl(monkeypatch, capsys) -> None:
     assert json.loads(captured.out) == json.loads(event.to_json())
     assert "Joy-Con selecionado" in captured.err
     assert "Lendo /dev/input/fake" in captured.err
+
+
+def test_validate_config_command(capsys) -> None:
+    exit_code = cli.main(["validate-config", "config.example.yaml"])
+
+    assert exit_code == 0
+    assert "schema v1" in capsys.readouterr().out
+
+
+def test_validate_config_reports_precise_error(tmp_path: Path, capsys) -> None:
+    path = tmp_path / "bad.yaml"
+    path.write_text("version: 1\nextra: true\n", encoding="utf-8")
+
+    exit_code = cli.main(["validate-config", str(path)])
+
+    assert exit_code == cli.EXIT_CONFIG
+    assert "config.extra" in capsys.readouterr().err
+
+
+def test_run_dry_run_wires_both_devices(monkeypatch, capsys) -> None:
+    paired = (
+        BluetoothDevice(
+            address="11:22:33:44:55:01", name="Joy-Con (L)", side="left"
+        ),
+        BluetoothDevice(
+            address="11:22:33:44:55:02", name="Joy-Con (R)", side="right"
+        ),
+    )
+    inputs = (
+        JoyConInput("/dev/input/left", "Joy-Con (L)", paired[0].address, "left"),
+        JoyConInput("/dev/input/right", "Joy-Con (R)", paired[1].address, "right"),
+    )
+    called = []
+    monkeypatch.setattr(cli, "list_paired_devices", lambda: list(paired))
+    monkeypatch.setattr(cli, "connect_device", lambda address: False)
+    by_address = {item.address: item for item in inputs}
+    monkeypatch.setattr(
+        cli, "wait_for_input", lambda address, timeout: by_address[address]
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_mapping",
+        lambda selected, engine, output: called.append((selected, output)),
+    )
+
+    exit_code = cli.main(
+        [
+            "run",
+            "--config",
+            "config.example.yaml",
+            "--dry-run",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert tuple(item.side for item in called[0][0]) == ("left", "right")
+    assert called[0][1].__class__.__name__ == "DryRunOutput"
+    assert "dry-run" in captured.err
+
+
+def test_run_requires_one_joycon_of_each_side(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(
+        cli,
+        "list_paired_devices",
+        lambda: [
+            BluetoothDevice(
+                address="11:22:33:44:55:01", name="Joy-Con (L)", side="left"
+            )
+        ],
+    )
+
+    exit_code = cli.main(["run", "--config", "config.example.yaml", "--dry-run"])
+
+    assert exit_code == cli.EXIT_NOT_FOUND
+    assert "'right'" in capsys.readouterr().err

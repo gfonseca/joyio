@@ -1,3 +1,3 @@
-"""JoyIO Joy-Con input project."""
+"""JoyIO Joy-Con keyboard and mouse mapping project."""
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

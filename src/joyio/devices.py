@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from contextlib import suppress
 from dataclasses import dataclass
+import select
 import time
-from typing import Iterator
+from typing import Iterator, Sequence
 
 from evdev import InputDevice, InputEvent, ecodes, list_devices
 
@@ -124,3 +125,52 @@ def read_normalized_events(
         ) from error
     finally:
         device.close()
+
+
+def read_runtime_events(
+    inputs: Sequence[JoyConInput],
+    *,
+    tick_interval: float = 1.0 / 120.0,
+) -> Iterator[NormalizedEvent | None]:
+    """Multiplex Joy-Con inputs and yield normalized events plus periodic ticks."""
+
+    opened: dict[int, tuple[InputDevice, JoyConInput]] = {}
+    try:
+        for source in inputs:
+            try:
+                device = InputDevice(source.path)
+            except (FileNotFoundError, PermissionError) as error:
+                raise InputDeviceError(
+                    f"não foi possível abrir {source.path}: {error}"
+                ) from error
+            opened[device.fd] = (device, source)
+
+        while True:
+            readable, _, _ = select.select(list(opened), [], [], tick_interval)
+            if not readable:
+                yield None
+                continue
+            yielded = False
+            for fd in readable:
+                device, source = opened[fd]
+                for event in device.read():
+                    absinfo = None
+                    if event.type == ecodes.EV_ABS:
+                        with suppress(OSError):
+                            absinfo = device.absinfo(event.code)
+                    normalized = normalize_event(
+                        event, side=source.side, absinfo=absinfo
+                    )
+                    if normalized is not None:
+                        yielded = True
+                        yield normalized
+            if not yielded:
+                yield None
+    except OSError as error:
+        paths = ", ".join(source.path for source in inputs)
+        raise InputDeviceError(
+            f"um Joy-Con ({paths}) foi desconectado ou falhou: {error}"
+        ) from error
+    finally:
+        for device, _ in opened.values():
+            device.close()

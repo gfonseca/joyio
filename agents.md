@@ -5,14 +5,16 @@ Este arquivo resume o estado atual do repo e as decisoes que ja foram tomadas, p
 ## Estado atual
 
 - Projeto em Python para Linux ARM64/aarch64.
-- Fase atual: Fase 1, captura canonica de entrada.
-- A CLI existe e funciona com `joyio list` e `joyio inspect`.
+- Fase atual: Fase 2, mapeamento e saida virtual.
+- A CLI funciona com `joyio list`, `joyio inspect`, `joyio validate-config` e `joyio run`.
 - O fluxo atual e:
   - BlueZ conecta o Joy-Con;
   - o kernel `hid_nintendo` expoe o controle como evdev;
   - o projeto le `event*` via `python-evdev`;
   - os eventos sao normalizados para nomes canonicamente estaveis do JoyIO;
   - `inspect` imprime JSONL puro em `stdout` e diagnosticos em `stderr`.
+  - `run` conecta um Joy-Con L e um R, multiplexa os dois e produz acoes de teclado/mouse;
+  - `--dry-run` imprime as acoes em JSONL; sem ele, a saida usa `uinput`.
 - O ambiente de desenvolvimento usa `.venv`; o projeto deve continuar sendo instalado e executado por esse ambiente virtual.
 
 ## Decisoes ja fixadas
@@ -48,21 +50,29 @@ Este arquivo resume o estado atual do repo e as decisoes que ja foram tomadas, p
 - Os controles canonicamente traduzidos estao em `src/joyio/controls.py`.
 - O contrato e lado-especifico para os Joy-Cons L e R.
 - SL/SR sao tratados como botoes digitais, nao como gatilhos analogicos.
+- O runtime considera L+R um unico controle logico; `left`/`right` identificam a origem, nao modos de execucao separados.
+- No YAML, botoes ficam sob `mappings.buttons.left` e `mappings.buttons.right`, evitando colisao entre SL/SR.
 
 ## O que ja foi entregue
 
 - `joyio list` lista Joy-Cons pareados.
 - `joyio inspect --device left|right|MAC` conecta quando necessario, encontra o `evdev` e imprime eventos normalizados.
+- `joyio validate-config` valida integralmente o schema v1 antes de acessar hardware.
+- `joyio run` exige e executa o par L/R no mesmo pipeline, com saida `dry-run` ou `uinput`.
+- `config.example.yaml` e um perfil funcional para o par Joy-Con L/R.
 - Fixtures reais anonimizadas existem em `tests/fixtures/`.
 - Testes automatizados cobrem lista, inspecao, mapeamento canonico, desconexao e separacao `stdout`/`stderr`.
 - Existe regra udev restrita em `config/udev/70-joyio.rules`.
 - Existe ADR registrando a decisao `hid_nintendo` + `evdev`.
+- A suite da Fase 2 possui 50 testes sem dependencia de hardware.
+- `tests/test_functional_profile.py` atravessa YAML, mapping e dry-run para todos os 22 botoes, mouse e scroll horizontal/vertical.
 
 ## Arquivos que valem leitura antes de mexer no codigo
 
 - `README.md`
 - `FASE_0.md`
 - `FASE_1.md`
+- `FASE_2.md`
 - `docs/adr/0001-usar-hid-nintendo-e-evdev.md`
 - `src/joyio/cli.py`
 - `src/joyio/bluetooth.py`
@@ -77,21 +87,33 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/pip install --no-deps -e .
 .venv/bin/pytest
+.venv/bin/pytest -q tests/test_functional_profile.py
 .venv/bin/joyio list
 .venv/bin/joyio inspect --device right
+.venv/bin/joyio validate-config config.example.yaml
+.venv/bin/joyio run --config config.example.yaml --dry-run
 ```
 
 ## Pontos importantes para continuidade
 
-### Fase 2 ainda nao implementada
+### Fase 2 implementada
 
-- motor de mapeamento;
-- configuracao YAML;
-- saida virtual via `uinput`;
-- `--dry-run`;
-- dead zone, curva de mouse, sensibilidade, invert e limite de velocidade;
+- motor de mapeamento com `tap`, `hold` e acordes;
+- schema YAML v1 estrito e exemplo executavel;
+- saida virtual via `uinput` e backend `--dry-run`;
+- dead zone radial, curva, sensibilidade, inversao e limite de velocidade;
+- mouse pelo analogico esquerdo e scroll horizontal/vertical pelo analogico direito;
+- Joy-Con L: `ZL` clique esquerdo e `L` direito; Joy-Con R: `ZR` clique direito e `R` esquerdo;
+- integracao temporal a 120 Hz e residuos fracionarios;
+- liberacao de entradas presas no encerramento/falha;
+- multiplexacao simultanea dos Joy-Cons L/R e selecao obrigatoria de um controle de cada lado;
+
+### Fase 3 ainda nao implementada
+
 - reconexao com backoff;
-- validacao de config.
+- selecao automatica deterministica;
+- metricas/logging estruturado;
+- testes prolongados e empacotamento reproduzivel.
 
 ### Ponto tecnico relevante
 
@@ -118,6 +140,6 @@ python3 -m venv .venv
 ## Se for continuar daqui
 
 1. Nao reverta a decisao de usar `hid_nintendo` + `evdev` sem motivo concreto.
-2. Nao colocar YAML ou `uinput` no leitor atual; isso e Fase 2.
+2. Nao colocar YAML ou `uinput` no leitor de eventos; preserve as fronteiras da Fase 2.
 3. Se for mexer em Bluetooth, preserve a fronteira entre descoberta/conexao e leitura de eventos.
-4. Se for iniciar o motor de mapeamento, trate drift, dead zone e repeticao la, nao na camada de captura.
+4. Preserve a separacao entre config, mapping, output e runtime ao implementar reconexao.
