@@ -132,7 +132,7 @@ def test_run_dry_run_wires_both_devices(monkeypatch, capsys) -> None:
     assert "dry-run" in captured.err
 
 
-def test_run_requires_one_joycon_of_each_side(monkeypatch, capsys) -> None:
+def test_run_warns_on_missing_joycon_and_proceeds(monkeypatch, capsys) -> None:
     monkeypatch.setattr(
         cli,
         "list_paired_devices",
@@ -143,7 +143,32 @@ def test_run_requires_one_joycon_of_each_side(monkeypatch, capsys) -> None:
         ],
     )
 
+    class FakeConnector:
+        def __init__(self, addresses, policy, **kwargs):
+            self.addresses = addresses
+
+        def maintain(self, active_sides):
+            return None
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(cli, "BluetoothConnector", FakeConnector)
+    called = []
+    monkeypatch.setattr(
+        cli,
+        "run_managed_mapping",
+        lambda addresses, engine, output, maintain, **kwargs: called.append(
+            (addresses, output)
+        ),
+    )
+
     exit_code = cli.main(["run", "--config", "config.example.yaml", "--dry-run"])
 
-    assert exit_code == cli.EXIT_NOT_FOUND
-    assert "'right'" in capsys.readouterr().err
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    # Warns about missing right Joy-Con.
+    assert "'right'" in captured.err
+    assert "ignorado" in captured.err
+    # Proceeds with only the left one.
+    assert called[0][0] == {"left": "11:22:33:44:55:01"}

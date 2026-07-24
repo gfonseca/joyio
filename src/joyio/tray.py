@@ -13,12 +13,15 @@ StatusNotifierItem-compatible extension (e.g. AppIndicator) is installed.
 
 from __future__ import annotations
 
+import importlib.resources
 import os
 import subprocess
 import sys
 import threading
 import traceback
 from typing import Callable
+
+from PIL import Image
 
 from jeepney import (
     DBusAddress,
@@ -53,24 +56,23 @@ MENU_IFACE = "com.canonical.dbusmenu"
 MENU_PATH = "/MenuBar"
 BUS_NAME = "org.joyio.tray"
 
-# Theme icons for a controller item in active/passive states.
-ICON_ACTIVE = "input-gaming"
-ICON_DISABLED = "input-gaming-symbolic"
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-def _sni_properties(title: str, icon_name: str, status: str) -> dict:
-    """Build a dict of SNI properties as (signature, value) pairs."""
+def _sni_properties(title: str, status: str) -> dict:
+    """Build a dict of SNI properties as (signature, value) pairs.
+
+    Ships an ``IconPixmap`` loaded from a PNG so the icon renders at a
+    readable size regardless of the system icon theme.
+    """
     return {
         "Category": ("s", "ApplicationStatus"),
         "Id": ("s", "joyio"),
         "Title": ("s", title),
         "Status": ("s", status),
         "WindowId": ("u", 0),
-        "IconName": ("s", icon_name),
         "IconPixmap": ("a(iiay)", _controller_pixmaps(status == "Active")),
         "ItemIsMenu": ("b", False),
         "Menu": ("o", MENU_PATH),
@@ -78,58 +80,35 @@ def _sni_properties(title: str, icon_name: str, status: str) -> dict:
 
 
 def _controller_pixmaps(active: bool) -> list[tuple[int, int, bytes]]:
-    size = 22
-    pixels = bytearray(size * size * 4)
-    if active:
-        body = (255, 121, 31, 255)
-        edge = (33, 115, 204, 255)
-        buttons = (244, 244, 244, 255)
-        dpad = (19, 79, 145, 255)
-    else:
-        body = (166, 166, 166, 255)
-        edge = (116, 116, 116, 255)
-        buttons = (214, 214, 214, 255)
-        dpad = (92, 92, 92, 255)
+    """Return a list of (width, height, argb-bytes) pixmaps.
 
-    def put(x: int, y: int, rgba: tuple[int, int, int, int]) -> None:
-        idx = (y * size + x) * 4
-        pixels[idx : idx + 4] = bytes(rgba)
+    Pixels are in **ARGB32 network byte order** (A, R, G, B per pixel),
+    matching the D-Bus ``a(iiay)`` wire format expected by
+    StatusNotifierItem hosts (KDE, GNOME AppIndicator, …).
 
-    def inside_body(x: int, y: int) -> bool:
-        return 4 <= x <= 17 and 7 <= y <= 14
+    The source PNG (32×32 RGBA) is resized to multiple dimensions so
+    the host can pick the best fit.
+    """
+    img = _load_icon(active)
+    pixmaps: list[tuple[int, int, bytes]] = []
+    for size in (24, 32, 48):
+        resized = img.resize((size, size), Image.LANCZOS)
+        pixmaps.append((size, size, _rgba_to_argb(resized)))
+    return pixmaps
 
-    for y in range(size):
-        for x in range(size):
-            if inside_body(x, y):
-                put(x, y, body)
 
-    # Simple controller silhouette.
-    for x in range(5, 17):
-        put(x, 7, edge)
-        put(x, 14, edge)
-    for y in range(8, 14):
-        put(4, y, edge)
-        put(17, y, edge)
+def _load_icon(active: bool) -> Image.Image:
+    """Load the bundled controller icon for the given state."""
+    name = "joycon-icon.png" if active else "joycon-icon-d.png"
+    path = importlib.resources.files("joyio.icons") / name
+    with path.open("rb") as fh:
+        return Image.open(fh).convert("RGBA")
 
-    for x in range(7, 9):
-        for y in range(9, 11):
-            put(x, y, dpad)
-    for x in range(12, 14):
-        for y in range(9, 11):
-            put(x, y, buttons)
-    for x in range(10, 12):
-        for y in range(8, 10):
-            put(x, y, buttons)
 
-    if not active:
-        for x in range(8, 10):
-            for y in range(8, 13):
-                put(x, y, (76, 76, 76, 255))
-        for x in range(12, 14):
-            for y in range(8, 13):
-                put(x, y, (76, 76, 76, 255))
-
-    return [(size, size, bytes(pixels))]
+def _rgba_to_argb(img: Image.Image) -> bytes:
+    """Convert Pillow RGBA to ARGB32 byte string (D-Bus wire format)."""
+    r, g, b, a = img.split()
+    return Image.merge("RGBA", (a, r, g, b)).tobytes()
 
 
 def _open_editor(config_path: str) -> None:
@@ -158,7 +137,6 @@ class JoyIOTray:
         self._thread = None
         self._lock = threading.Lock()
         self._title = "JoyIO"
-        self._icon_name = ICON_ACTIVE
         self._status = "Active"
         self._revision = 1
 
@@ -191,13 +169,11 @@ class JoyIOTray:
         if enabled:
             self._update(
                 title="JoyIO — mapeamento ativo",
-                icon_name=ICON_ACTIVE,
                 status="Active",
             )
         else:
             self._update(
                 title="JoyIO — mapeamento desligado",
-                icon_name=ICON_DISABLED,
                 status="Passive",
             )
 
@@ -209,14 +185,11 @@ class JoyIOTray:
         self,
         *,
         title: str | None = None,
-        icon_name: str | None = None,
         status: str | None = None,
     ) -> None:
         with self._lock:
             if title is not None:
                 self._title = title
-            if icon_name is not None:
-                self._icon_name = icon_name
             if status is not None:
                 self._status = status
         # Emit NewIcon so the host re-reads IconPixmap & Title.
@@ -234,7 +207,7 @@ class JoyIOTray:
     @property
     def _props(self) -> dict:
         with self._lock:
-            return _sni_properties(self._title, self._icon_name, self._status)
+            return _sni_properties(self._title, self._status)
 
     # ------------------------------------------------------------------
     # D-Bus loop
@@ -304,11 +277,8 @@ class JoyIOTray:
         iface = msg.header.fields.get(HeaderFields.interface, "")
         member = msg.header.fields.get(HeaderFields.member, "")
         path = msg.header.fields.get(HeaderFields.path, "")
-        print(
-            f"  tray: recv iface={iface!r} member={member!r} path={path!r} body={unwrap_msg(msg)!r}",
-            file=sys.stderr,
-        )
 
+        reply: object = None
         try:
             if iface == PROP_IFACE and path == SNI_PATH:
                 reply = self._prop_reply(member, msg)
@@ -318,14 +288,27 @@ class JoyIOTray:
                 reply = self._menu_prop_reply(member, msg)
             elif iface == MENU_IFACE and path == MENU_PATH:
                 reply = self._menu_reply(member, msg)
+            elif iface == "org.freedesktop.DBus.Introspectable" and member == "Introspect":
+                # Let the D-Bus daemon handle introspection — we don't
+                # need to reply ourselves.  Returning without sending
+                # anything is the correct behaviour for an SNI item.
+                return
+            elif iface == "" and member == "":
+                return  # silently ignore empty messages
             else:
                 reply = new_error(msg, "org.freedesktop.DBus.Error.UnknownMethod",
                                   f"{iface}.{member}")
         except Exception as exc:
-            reply = new_error(msg, "org.freedesktop.DBus.Error.Failed", str(exc))
+            try:
+                reply = new_error(msg, "org.freedesktop.DBus.Error.Failed", str(exc))
+            except Exception:
+                return
 
         if reply is not None:
-            conn.send(reply)
+            try:
+                conn.send(reply)
+            except Exception:
+                pass  # best-effort — don't kill the loop over a bad reply
 
     def _prop_reply(self, member: str, msg) -> object:
         if member == "GetAll":

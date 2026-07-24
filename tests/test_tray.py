@@ -3,23 +3,32 @@ from __future__ import annotations
 from joyio import tray
 
 
-def test_sni_properties_expose_theme_icon_and_status() -> None:
-    props = tray._sni_properties("JoyIO", tray.ICON_ACTIVE, "Active")
-    paused = tray._sni_properties("JoyIO", tray.ICON_DISABLED, "Passive")
+def test_sni_properties_expose_pixmap_and_status() -> None:
+    props = tray._sni_properties("JoyIO", "Active")
+    paused = tray._sni_properties("JoyIO", "Passive")
 
-    assert props["IconName"] == ("s", tray.ICON_ACTIVE)
+    assert "IconName" not in props, "IconName removed — pixmap only"
     assert props["Status"] == ("s", "Active")
+    assert paused["Status"] == ("s", "Passive")
     assert props["ItemIsMenu"] == ("b", False)
+    assert props["Category"] == ("s", "ApplicationStatus")
+    assert props["Id"] == ("s", "joyio")
+
+    # IconPixmap: D-Bus signature and multiple sizes.
     assert props["IconPixmap"][0] == "a(iiay)"
-    assert len(props["IconPixmap"][1]) == 1
-    assert props["IconPixmap"][1] != paused["IconPixmap"][1]
-    active_pixels = props["IconPixmap"][1][0][2]
-    assert active_pixels[(7 * 22 + 5) * 4 : (7 * 22 + 5) * 4 + 4] == bytes(
-        (33, 115, 204, 255)
-    )
-    assert active_pixels[(10 * 22 + 10) * 4 : (10 * 22 + 10) * 4 + 4] == bytes(
-        (255, 121, 31, 255)
-    )
+    pixmaps = props["IconPixmap"][1]
+    sizes = {(w, h) for w, h, _data in pixmaps}
+    assert (24, 24) in sizes
+    assert (32, 32) in sizes
+    assert (48, 48) in sizes
+
+    # Active and paused pixmaps differ (paused is desaturated).
+    paused_pixmaps = paused["IconPixmap"][1]
+    assert props["IconPixmap"][1] != paused_pixmaps
+
+    # Verify ARGB pixel data has correct byte length.
+    for w, h, data in pixmaps:
+        assert len(data) == w * h * 4, f"{w}×{h} pixmap: expected {w*h*4} ARGB bytes"
 
 
 def test_menu_layout_and_event_dispatch(monkeypatch) -> None:

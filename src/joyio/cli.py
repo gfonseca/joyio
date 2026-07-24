@@ -200,23 +200,36 @@ def _select_pair(
     devices: list[BluetoothDevice],
     left_override: str | None,
     right_override: str | None,
-) -> tuple[BluetoothDevice, BluetoothDevice]:
+) -> list[BluetoothDevice]:
     selectors = {
         "left": left_override or config.device.left_address or "left",
         "right": right_override or config.device.right_address or "right",
     }
-    selected = {
-        side: _select_device(selector, devices) for side, selector in selectors.items()
-    }
-    for side, device in selected.items():
-        if device.side != side:
-            raise ConfigError(
-                f"Joy-Con configurado para {side} é do lado {device.side}: "
-                f"{device.address}"
+    selected: list[BluetoothDevice] = []
+    for side, selector in selectors.items():
+        try:
+            device = _select_device(selector, devices)
+        except LookupError:
+            print(
+                f"  {side}: Joy-Con não encontrado ({selector!r}) — ignorado",
+                file=sys.stderr,
             )
-    if selected["left"].address == selected["right"].address:
+            continue
+        if device.side != side:
+            print(
+                f"  {side}: Joy-Con {device.address} é do lado {device.side}, "
+                f"não {side} — ignorado",
+                file=sys.stderr,
+            )
+            continue
+        selected.append(device)
+    if not selected:
+        raise LookupError(
+            "nenhum Joy-Con pareado encontrado; execute 'joyio list'"
+        )
+    if len(selected) >= 2 and selected[0].address == selected[1].address:
         raise ConfigError("os Joy-Cons esquerdo e direito não podem ter o mesmo endereço")
-    return selected["left"], selected["right"]
+    return selected
 
 
 def _validate_config_command(path: str) -> int:
