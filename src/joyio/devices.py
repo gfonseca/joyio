@@ -30,6 +30,33 @@ class InputDeviceError(RuntimeError):
     """A Joy-Con evdev node could not be found or read."""
 
 
+def _safe_grab(device: InputDevice) -> bool:
+    """Grab a device for exclusive access; return True on success."""
+    try:
+        device.grab()
+        return True
+    except OSError:
+        return False
+
+
+def set_grabbed(
+    devices: dict | list | None,
+    grab: bool,
+) -> None:
+    """Grab or ungrab a collection of ``InputDevice`` objects."""
+    if devices is None:
+        return
+    items = devices.values() if isinstance(devices, dict) else devices
+    for device in items:
+        try:
+            if grab:
+                device.grab()
+            else:
+                device.ungrab()
+        except OSError:
+            pass
+
+
 @dataclass(frozen=True, slots=True)
 class JoyConInput:
     path: str
@@ -50,6 +77,9 @@ def _cached_absinfo(
 
 
 def _is_joycon(device: InputDevice) -> bool:
+    # IMU (motion sensor) nodes are not usable as gamepad input.
+    if "imu" in device.name.casefold():
+        return False
     ids_match = (
         device.info.vendor == NINTENDO_VENDOR_ID
         and device.info.product in JOYCON_PRODUCTS
@@ -149,6 +179,7 @@ def read_runtime_events(
     tick_interval: float = 1.0 / 120.0,
     config_fd: int | None = None,
     config_path: str = "",
+    grabbed: list[InputDevice] | None = None,
 ) -> Iterator[NormalizedEvent | ConfigFileChanged | None]:
     """Multiplex Joy-Con inputs and yield normalized events plus periodic ticks."""
 
@@ -164,6 +195,9 @@ def read_runtime_events(
                 ) from error
             opened[device.fd] = (device, source)
             absinfo_caches[device.fd] = {}
+            if grabbed is not None:
+                _safe_grab(device)
+                grabbed.append(device)
 
         while True:
             fds = list(opened)
@@ -216,6 +250,7 @@ def read_managed_events(
     clock: Callable[[], float] = time.monotonic,
     config_fd: int | None = None,
     config_path: str = "",
+    grabbed: dict[JoyConSide, InputDevice] | None = None,
 ) -> Iterator[NormalizedEvent | DeviceStatusEvent | ConfigFileChanged | None]:
     """Read nodes dynamically so either Joy-Con can disappear and return."""
 
@@ -227,6 +262,8 @@ def read_managed_events(
     def detach(side: JoyConSide) -> DeviceStatusEvent:
         device, source, _ = opened.pop(side)
         device.close()
+        if grabbed is not None:
+            grabbed.pop(side, None)
         return DeviceStatusEvent(side, "disconnected", source.path)
 
     try:
@@ -252,6 +289,9 @@ def read_managed_events(
                         # The node may vanish between discovery and open. The next
                         # short discovery pass will retry only this side.
                         continue
+                    if grabbed is not None:
+                        _safe_grab(device)
+                        grabbed[side] = device
                     opened[side] = (device, source, {})
                     yield DeviceStatusEvent(side, "connected", source.path)
                 next_discovery = clock() + discovery_interval
@@ -340,3 +380,5 @@ def read_managed_events(
     finally:
         for device, _, _ in opened.values():
             device.close()
+        if grabbed is not None:
+            grabbed.clear()

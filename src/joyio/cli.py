@@ -294,6 +294,7 @@ def _run_command(
             if tray is not None:
                 tray.start()
                 tray.set_mapping_enabled(config.runtime.enabled)
+            grabbed: list = []
             run_mapping(
                 inputs,
                 MappingEngine(config),
@@ -303,6 +304,7 @@ def _run_command(
                 config_path=config_full_path,
                 config_watcher=watcher,
                 control_queue=control_queue,
+                grabbed_devices=grabbed,
             )
         else:
             addresses = {device.side: device.address for device in selected}
@@ -340,6 +342,7 @@ def _run_command(
                 if tray is not None:
                     tray.start()
                     tray.set_mapping_enabled(config.runtime.enabled)
+                grabbed_managed: dict = {}
                 run_managed_mapping(
                     addresses,
                     MappingEngine(config),
@@ -351,6 +354,7 @@ def _run_command(
                     config_path=config_full_path,
                     config_watcher=watcher,
                     control_queue=control_queue,
+                    grabbed_devices=grabbed_managed,
                 )
             finally:
                 connector.close()

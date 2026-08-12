@@ -187,20 +187,40 @@ class JoyIOTray:
         title: str | None = None,
         status: str | None = None,
     ) -> None:
+        props_changed: dict[str, tuple[str, object]] = {}
         with self._lock:
             if title is not None:
                 self._title = title
             if status is not None:
+                old_status = self._status
                 self._status = status
-        # Emit NewIcon so the host re-reads IconPixmap & Title.
+                if status != old_status:
+                    props_changed["IconPixmap"] = (
+                        "a(iiay)",
+                        _controller_pixmaps(status == "Active"),
+                    )
+                    props_changed["Status"] = ("s", status)
         conn = self._conn
         if conn is not None:
             try:
                 from jeepney import new_signal
 
-                conn.send(new_signal(SNI_PATH, SNI_IFACE, "NewIcon"))
-                conn.send(new_signal(SNI_PATH, SNI_IFACE, "NewStatus"))
-                conn.send(new_signal(MENU_PATH, MENU_IFACE, "LayoutUpdated"))
+                conn.send(new_signal(
+                    DBusAddress(SNI_PATH, interface=SNI_IFACE), "NewIcon",
+                ))
+                conn.send(new_signal(
+                    DBusAddress(SNI_PATH, interface=SNI_IFACE), "NewStatus",
+                ))
+                conn.send(new_signal(
+                    DBusAddress(MENU_PATH, interface=MENU_IFACE), "LayoutUpdated",
+                ))
+                if props_changed:
+                    conn.send(new_signal(
+                        DBusAddress(SNI_PATH, interface=PROP_IFACE),
+                        "PropertiesChanged",
+                        "sa{sv}as",
+                        (SNI_IFACE, list(props_changed.items()), []),
+                    ))
             except Exception:
                 pass
 

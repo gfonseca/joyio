@@ -81,6 +81,7 @@ def test_runtime_limits_ticks_during_event_bursts(monkeypatch) -> None:
             self.processed = 0
             self.ticks = 0
             self.reset_called = False
+            self.enabled = True
 
         def process(self, event):
             self.processed += 1
